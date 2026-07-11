@@ -174,11 +174,12 @@ const sfx = {
   drop()  { beep(700, 0.3, 'sawtooth', 0.05, -400); },
   pew()   { beep(900, 0.09, 'square', 0.05, -550); },
   zap()   { beep(320, 0.12, 'sawtooth', 0.05, -180); },
+  scream(){ beep(1100, 0.5, 'sawtooth', 0.07, -600); setTimeout(() => beep(900, 0.35, 'square', 0.05, -400), 80); },
 };
 
 // ============ LEVELS ============
 // = brick   ? coin-block   M panini-block   o coin   W pistol pickup   S rideable spacecraft   P start   F flag
-// villains: H hamster   G big bruiser   R red clone (saucer-drop in W5+)   B sandwich thrower
+// villains: H hamster   G big bruiser   R red clone (saucer-drop in W5+)   B sandwich thrower   T Mertle (scream = 10s nap)
 // experiments: 1 Babyfier-151 (W6, like the hamster)   3 Amnesio-303 (W7, back to World 3!)
 //              2 Sample-258 (W8, hyper curse: moves doubled)   0 Fibber-032 (W9, costs TWO hearts)
 // friends:  L Lilo (speed + 4 arms)   N Nani (+1 heart)   D David (higher jump)
@@ -201,7 +202,7 @@ const LEVELS = [
   '                  ooo                                oo                                       ',
   '                 =====            o o o                    K                                  ',
   '        M                        =======        ====     ====                                 ',
-  '   P          H         G                  H              o                G       F          ',
+  '   P          H         G                  T              o                G       F          ',
   '  ========  =====  ==============================  ==   =====  =====================          ',
   '  ========  =====  ==============================  ==   =====  =====================          ',
   '                                                                                              ',
@@ -224,7 +225,7 @@ const LEVELS = [
   '                                ===                                                               ',
   '                            ==              oo                   ooo                              ',
   '        oo              ==         ooo     ====        M       =====        o o o                 ',
-  '   P          H                =====     G      B             G     H           G      F         ',
+  '   P          H                =====     G      B             G     T           G      F         ',
   '  ==========================================================  ====================================',
   '  ==========================================================  ====================================',
 ],
@@ -301,7 +302,7 @@ const LEVELS = [
   '            oo                 ooo                                  ooo',
   '           ====               =====              W         ====   =====',
   '                        M',
-  '   P      H     R      B        G     1      R     H       0     G      R     B       G      F',
+  '   P      H     R      B        G     1      R     T       0     G      R     B       G      F',
   '  ==========================  ====================================================   ===============',
   '  ==========================  ====================================================   ===============',
 ],
@@ -348,6 +349,7 @@ function loadLevel(n) {
   rideShips = [];
   player.flying = false; // the spacecraft stays behind between levels
   player.hyper = 0;       // Sample's curse wears off between levels
+  player.sleep = 0;       // and Stitch wakes up
   for (let y = 0; y < levelH; y++) {
     tiles[y] = [];
     for (let x = 0; x < levelW; x++) {
@@ -356,7 +358,7 @@ function loadLevel(n) {
       if (c === '=' || c === '?' || c === 'M') tiles[y][x] = c;
       else if (c === 'F') tiles[y][x] = 'F';
       else if (c === 'o') coinsList.push({ x, y, taken: false, phase: Math.random() * 6 });
-      else if ('EGHRB1320'.includes(c)) {
+      else if ('EGHRB1320T'.includes(c)) {
         // G bruiser, H/E hamster, R red clone, B sandwich-thrower, digits = experiments
         const kind = c === 'E' ? 'H' : c;
         const SPEC = {
@@ -368,6 +370,7 @@ function loadLevel(n) {
           '3': { w: 0.7,  h: 0.66, vx: -1.2 },
           '2': { w: 0.7,  h: 0.68, vx: -1.4 },
           '0': { w: 0.72, h: 0.66, vx: -1.0 },
+          T:   { w: 0.6,  h: 0.95, vx: -0.8 },
         }[kind];
         const eh = TILE * SPEC.h;
         const en = {
@@ -620,6 +623,7 @@ function hitBlockAbove(ty) {
       mushrooms.push({
         x: tx * TILE + TILE * 0.15, y: ty * TILE - TILE * 0.72,
         w: TILE * 0.7, h: TILE * 0.7, vx: 1.4, vy: 0,
+        ice: Math.random() < 0.5, // sometimes it's ice cream!
       });
       return;
     }
@@ -733,12 +737,13 @@ function update() {
   // --- player movement ---
   const FRICTION = 0.82, GRAVITY = 0.62;
   const hyper = player.hyper > 0; // Sample's beat curse: every move is doubled
+  const asleep = player.sleep > 0; // Mertle screamed — nap time
   const JUMP = (player.surf ? -15.4 : -13.2) * (hyper ? 1.35 : 1);
   const ACCEL = (player.fast ? 0.72 : 0.55) * (hyper ? 1.7 : 1);
   const MAXSPD = (player.fast ? 6.4 : 4.6) * (hyper ? 2 : 1);
-  if (keys.left)  { player.vx -= ACCEL; player.facing = -1; }
-  if (keys.right) { player.vx += ACCEL; player.facing = 1; }
-  if (!keys.left && !keys.right) player.vx *= FRICTION;
+  if (keys.left && !asleep)  { player.vx -= ACCEL; player.facing = -1; }
+  if (keys.right && !asleep) { player.vx += ACCEL; player.facing = 1; }
+  if ((!keys.left && !keys.right) || asleep) player.vx *= FRICTION;
   player.vx = Math.max(-MAXSPD, Math.min(MAXSPD, player.vx));
   if (Math.abs(player.vx) < 0.05) player.vx = 0;
 
@@ -754,7 +759,7 @@ function update() {
 
     // coyote time + jump buffer make jumping feel forgiving for kids
     if (player.onGround) player.coyote = 8; else player.coyote--;
-    if (jumpPressed) { player.jumpBuf = 8; jumpPressed = false; }
+    if (jumpPressed) { if (!asleep) player.jumpBuf = 8; jumpPressed = false; }
     else player.jumpBuf--;
 
     if (player.jumpBuf > 0 && player.coyote > 0) {
@@ -772,12 +777,16 @@ function update() {
 
   if (player.invuln > 0) player.invuln--;
   if (player.hyper > 0) player.hyper--;
+  if (player.sleep > 0) {
+    player.sleep--;
+    player.invuln = Math.max(player.invuln, 2); // nobody bothers a sleeping Stitch
+  }
   if (Math.abs(player.vx) > 0.5 && player.onGround) player.runFrame += Math.abs(player.vx) * 0.06;
 
   // --- plasma pistol ---
   player.fireCD = Math.max(0, (player.fireCD || 0) - 1);
   if (player.fireAnim) player.fireAnim--;
-  if (player.gun && keys.fire && player.fireCD === 0) {
+  if (player.gun && keys.fire && player.fireCD === 0 && !asleep) {
     player.fireCD = 18;
     player.fireAnim = 6;
     bolts.push({
@@ -840,7 +849,7 @@ function update() {
       }
       let hit = false;
       for (const en of enemies) {
-        if (!en.alive || en.inShip) continue;
+        if (!en.alive || en.inShip || en.kind === 'T') continue; // bolts never hit Mertle
         if (b.x > en.x && b.x < en.x + en.w && b.y > en.y && b.y < en.y + en.h) {
           hit = true;
           if (en.kind === 'G' && !en.shell) {
@@ -989,6 +998,23 @@ function update() {
           sfx.toss();
         }
       }
+      // Mertle stops to scream when Stitch is near
+      if (en.kind === 'T') {
+        if (en.scream > 0) {
+          en.scream--;
+          en.vx = 0;
+          if (en.scream === 0) en.vx = (en.sdir || -1) * 0.8;
+        } else {
+          en.sdir = Math.sign(en.vx) || en.sdir || -1;
+          en.screamT = (en.screamT === undefined ? 140 : en.screamT) - 1;
+          const tdx = Math.abs((player.x + player.w / 2) - (en.x + en.w / 2));
+          if (en.screamT <= 0 && tdx < 380) {
+            en.screamT = 220;
+            en.scream = 45;
+            sfx.scream();
+          }
+        }
+      }
     }
     // fell into a pit
     if (en.y > levelH * TILE + TILE * 4) { en.alive = false; en.squash = 999; continue; }
@@ -997,7 +1023,13 @@ function update() {
     if (player.x < en.x + en.w && player.x + player.w > en.x &&
         player.y < en.y + en.h && player.y + player.h > en.y) {
       if (player.vy > 1.5 && player.y + player.h - en.y < TILE * 0.6) {
-        if (en.kind === 'G' && !en.shell) {
+        if (en.kind === 'T') {
+          // you can't squash Mertle — she just screams louder
+          player.vy = -8;
+          en.scream = 45;
+          en.screamT = 220;
+          sfx.scream();
+        } else if (en.kind === 'G' && !en.shell) {
           // the big bruiser is tough: first stomp tucks him into his shell
           en.shell = true;
           en.shellTimer = 300;
@@ -1018,7 +1050,16 @@ function update() {
             { G: '#8296ab', R: '#e05252', B: '#e8c66a', '1': '#f2a0c0', '3': '#6db8ff', '2': '#c77dff', '0': '#ff5555' }[en.kind] || '#f0f0f0', 8);
         }
       } else if (player.invuln <= 0 && !en.shell) {
-        if ('320'.includes(en.kind)) applyExperimentHit(en.kind);
+        if (en.kind === 'T') {
+          // Mertle's scream knocks Stitch asleep for 10 seconds
+          player.sleep = 600;
+          player.vx = 0;
+          en.scream = 45;
+          en.screamT = 220;
+          sfx.scream();
+          spawnParticles(player.x + player.w / 2, player.y, '#cfc4f5', 10);
+        }
+        else if ('320'.includes(en.kind)) applyExperimentHit(en.kind);
         else damagePlayer();
         if (state.mode !== 'play') return; // Amnesio may have swapped the whole level
       }
@@ -1065,10 +1106,10 @@ function update() {
     if (player.x < m.x + m.w && player.x + player.w > m.x &&
         player.y < m.y + m.h && player.y + player.h > m.y) {
       mushrooms.splice(i, 1);
-      state.score += 500;
+      state.score += m.ice ? 750 : 500;
       sfx.powerup();
       if (!player.big) setSize(true);
-      spawnParticles(m.x + m.w / 2, m.y + m.h / 2, '#e2574c', 10);
+      spawnParticles(m.x + m.w / 2, m.y + m.h / 2, m.ice ? '#ff9ec6' : '#e2574c', 10);
     }
   }
 
@@ -1441,6 +1482,16 @@ function draw() {
   if (state.mode === 'play' || state.mode === 'levelclear' || state.mode === 'paused') {
     if (player.flying) drawSaucerAt(player.x + player.w / 2, player.y + player.h + 8, 0, keys.jump, false);
     if (!(player.invuln > 0 && Math.floor(player.invuln / 4) % 2)) drawPlayer();
+    if (player.sleep > 0) {
+      // Zzz drifting up while he naps
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 15px -apple-system, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const zt = Date.now() / 500;
+      ctx.fillText('z', player.x + player.w / 2 + 13, player.y - 6 - (zt % 1) * 12);
+      ctx.fillText('Z', player.x + player.w / 2 + 22, player.y - 16 - ((zt + 0.5) % 1) * 12);
+    }
     // Jumba's shield bubble
     if (player.shield) {
       ctx.strokeStyle = 'rgba(122,220,255,0.65)';
@@ -1613,7 +1664,40 @@ function drawMBlock(px, py) {
   drawSandwich(px + TILE / 2, py + TILE * 0.52, 28, 0);
 }
 
+function drawIceCream(m) {
+  const cx = m.x + m.w / 2, base = m.y + m.h;
+  // waffle cone
+  ctx.fillStyle = '#d9a05b';
+  ctx.beginPath();
+  ctx.moveTo(cx - 9, base - 18);
+  ctx.lineTo(cx + 9, base - 18);
+  ctx.lineTo(cx, base);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#b57d3c';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(cx - 6, base - 12); ctx.lineTo(cx + 2, base - 4);
+  ctx.moveTo(cx - 2, base - 16); ctx.lineTo(cx + 6, base - 8);
+  ctx.moveTo(cx + 6, base - 12); ctx.lineTo(cx - 2, base - 4);
+  ctx.stroke();
+  // scoops + cherry
+  ctx.fillStyle = '#f7a8c9';
+  ctx.beginPath(); ctx.arc(cx, base - 22, 9, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#fdf3e3';
+  ctx.beginPath(); ctx.arc(cx, base - 31, 7, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#d8283c';
+  ctx.beginPath(); ctx.arc(cx, base - 39, 3, 0, Math.PI * 2); ctx.fill();
+  // happy eyes
+  ctx.fillStyle = '#222';
+  ctx.beginPath();
+  ctx.arc(cx - 3.5, base - 22, 1.5, 0, Math.PI * 2);
+  ctx.arc(cx + 3.5, base - 22, 1.5, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 function drawPanini(m) {
+  if (m.ice) return drawIceCream(m);
   drawSandwich(m.x + m.w / 2, m.y + m.h * 0.55, m.w, 0);
   // happy little eyes so it stays friendly
   ctx.fillStyle = '#222';
@@ -1624,19 +1708,80 @@ function drawPanini(m) {
 }
 
 function drawFlag(px, py) {
-  ctx.fillStyle = '#e8e8e8';
-  ctx.fillRect(px + TILE / 2 - 3, py - TILE * 2.2, 6, TILE * 3.2);
-  ctx.fillStyle = '#ffcf40';
+  // the goal: Lilo & Stitch's house — blue walls on stilts, big red roof with a dome
+  const baseY = py + TILE;
+  const cx = px + TILE / 2;
+  const floorY = baseY - 52;
+  const wallTop = floorY - 62;
+  ctx.save();
+  // stilts
+  ctx.fillStyle = '#b9c7d6';
+  for (const sx of [-38, -10, 18, 44]) ctx.fillRect(cx + sx, floorY, 6, baseY - floorY);
+  // stairs up to the porch
+  ctx.strokeStyle = '#dfe8f0';
+  ctx.lineWidth = 4;
   ctx.beginPath();
-  ctx.arc(px + TILE / 2, py - TILE * 2.2, 8, 0, Math.PI * 2);
-  ctx.fill();
-  const wave = Math.sin(Date.now() / 200) * 4;
-  ctx.fillStyle = '#e74c3c';
+  ctx.moveTo(cx - 78, baseY); ctx.lineTo(cx - 44, floorY + 4);
+  ctx.moveTo(cx - 66, baseY); ctx.lineTo(cx - 32, floorY + 4);
+  ctx.stroke();
+  ctx.lineWidth = 2.5;
   ctx.beginPath();
-  ctx.moveTo(px + TILE / 2 + 3, py - TILE * 2.1);
-  ctx.lineTo(px + TILE / 2 + 3 + TILE * 0.9 + wave, py - TILE * 1.75);
-  ctx.lineTo(px + TILE / 2 + 3, py - TILE * 1.4);
+  for (let st = 1; st <= 4; st++) {
+    const t = st / 5;
+    ctx.moveTo(cx - 78 + 34 * t, baseY - (baseY - floorY - 4) * t);
+    ctx.lineTo(cx - 66 + 34 * t, baseY - (baseY - floorY - 4) * t);
+  }
+  ctx.stroke();
+  // porch floor
+  ctx.fillStyle = '#8fa8c4';
+  ctx.fillRect(cx - 52, floorY, 108, 7);
+  // blue walls
+  ctx.fillStyle = '#7fb4d9';
+  ctx.fillRect(cx - 44, wallTop, 94, floorY - wallTop);
+  ctx.fillStyle = '#5f98c4';
+  ctx.fillRect(cx + 26, wallTop, 24, floorY - wallTop);
+  // door + windows
+  ctx.fillStyle = '#a8563e';
+  ctx.fillRect(cx - 40, floorY - 34, 16, 34);
+  ctx.fillStyle = '#28406b';
+  ctx.fillRect(cx - 14, wallTop + 16, 18, 22);
+  ctx.fillRect(cx + 12, wallTop + 16, 18, 22);
+  ctx.strokeStyle = '#fffbe8';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(cx - 14, wallTop + 16, 18, 22);
+  ctx.strokeRect(cx + 12, wallTop + 16, 18, 22);
+  // big red roof
+  ctx.fillStyle = '#c94f3d';
+  ctx.beginPath();
+  ctx.moveTo(cx - 62, wallTop + 2);
+  ctx.lineTo(cx + 68, wallTop + 2);
+  ctx.lineTo(cx + 32, wallTop - 32);
+  ctx.lineTo(cx - 22, wallTop - 32);
+  ctx.closePath();
   ctx.fill();
+  ctx.fillStyle = '#a83c2e';
+  ctx.fillRect(cx - 62, wallTop, 130, 5);
+  // dome turret with round window
+  ctx.fillStyle = '#7fb4d9';
+  ctx.fillRect(cx - 6, wallTop - 50, 24, 18);
+  ctx.fillStyle = '#c94f3d';
+  ctx.beginPath();
+  ctx.arc(cx + 6, wallTop - 50, 16, Math.PI, 0);
+  ctx.fill();
+  ctx.fillStyle = '#28406b';
+  ctx.beginPath();
+  ctx.arc(cx + 6, wallTop - 42, 5, 0, Math.PI * 2);
+  ctx.fill();
+  // welcoming glow from the door + a bouncing star
+  ctx.fillStyle = 'rgba(255,220,120,0.35)';
+  ctx.beginPath();
+  ctx.ellipse(cx - 32, floorY - 16, 10, 18, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.font = '18px -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('⭐', cx + 6, wallTop - 74 + Math.sin(Date.now() / 300) * 4);
+  ctx.restore();
 }
 
 function drawLilo(li) {
@@ -2520,6 +2665,81 @@ function drawEnemy(en) {
     ctx.lineTo(cx + 5, py + h * 0.52);
     ctx.lineTo(cx + 7, py + h * 0.56);
     ctx.stroke();
+  } else if (en.kind === 'T') {
+    // — Mertle: red curls, glasses, freckles and a mighty scream —
+    const TSKIN = '#f2c9a4', THAIR = '#c9502e', TDRESS = '#e8d44d';
+    const screaming = en.scream > 0;
+    if (screaming) {
+      ctx.strokeStyle = 'rgba(255,255,255,' + (0.5 + Math.sin(en.frame * 6) * 0.2) + ')';
+      ctx.lineWidth = 2;
+      const dir2 = lookX > 0 ? 1 : -1;
+      for (let ri = 1; ri <= 3; ri++) {
+        const rr = 10 + ri * 9 + ((45 - en.scream) % 9);
+        ctx.beginPath();
+        ctx.arc(cx + dir2 * 8, py + h * 0.3, rr, dir2 > 0 ? -0.6 : Math.PI - 0.6, dir2 > 0 ? 0.6 : Math.PI + 0.6);
+        ctx.stroke();
+      }
+    }
+    // legs
+    ctx.strokeStyle = TSKIN;
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx - 5, py + h * 0.78); ctx.lineTo(cx - 5 + waddle, py + h - 1);
+    ctx.moveTo(cx + 5, py + h * 0.78); ctx.lineTo(cx + 5 - waddle, py + h - 1);
+    ctx.stroke();
+    // yellow dress
+    ctx.fillStyle = TDRESS;
+    ctx.beginPath();
+    ctx.moveTo(cx - w * 0.3, py + h * 0.42);
+    ctx.lineTo(cx + w * 0.3, py + h * 0.42);
+    ctx.lineTo(cx + w * 0.5, py + h * 0.8);
+    ctx.lineTo(cx - w * 0.5, py + h * 0.8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#c9b52e';
+    ctx.fillRect(cx - w * 0.4, py + h * 0.74, w * 0.8, 3);
+    // arms on hips
+    ctx.strokeStyle = TSKIN;
+    ctx.beginPath();
+    ctx.moveTo(cx - w * 0.24, py + h * 0.48); ctx.lineTo(cx - w * 0.42, py + h * 0.6);
+    ctx.moveTo(cx + w * 0.24, py + h * 0.48); ctx.lineTo(cx + w * 0.42, py + h * 0.6);
+    ctx.stroke();
+    // head
+    ctx.fillStyle = TSKIN;
+    ctx.beginPath();
+    ctx.ellipse(cx, py + h * 0.26, w * 0.34, h * 0.16, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // red curly hair
+    ctx.fillStyle = THAIR;
+    for (const [hx2, hy2, hr] of [[-0.3, 0.12, 0.16], [0, 0.06, 0.18], [0.3, 0.12, 0.16], [-0.42, 0.26, 0.12], [0.42, 0.26, 0.12]]) {
+      ctx.beginPath();
+      ctx.arc(cx + w * hx2, py + h * hy2, w * hr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // glasses
+    ctx.strokeStyle = '#5a4632';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.arc(cx - 5 + lookX, py + h * 0.26, 4.5, 0, Math.PI * 2);
+    ctx.moveTo(cx + 9.5 + lookX, py + h * 0.26);
+    ctx.arc(cx + 5 + lookX, py + h * 0.26, 4.5, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#2b2013';
+    ctx.beginPath();
+    ctx.arc(cx - 5 + lookX, py + h * 0.27, 1.5, 0, Math.PI * 2);
+    ctx.arc(cx + 5 + lookX, py + h * 0.27, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    // freckles
+    ctx.fillStyle = '#d99c66';
+    ctx.fillRect(cx - 8, py + h * 0.31, 2, 2);
+    ctx.fillRect(cx + 6, py + h * 0.31, 2, 2);
+    // mouth: a huge O mid-scream, a pout otherwise
+    ctx.fillStyle = '#7a2c20';
+    ctx.beginPath();
+    if (screaming) ctx.ellipse(cx + lookX, py + h * 0.35, 5, 6.5, 0, 0, Math.PI * 2);
+    else ctx.ellipse(cx + lookX, py + h * 0.36, 3, 1.6, 0, 0, Math.PI * 2);
+    ctx.fill();
   } else {
     // — small white hamster villain: big pink ears, red eyes, little cape —
     const FUR = '#f4f4f6', PINK = '#f3aec6', CAPE = '#c62f42';
@@ -2777,7 +2997,7 @@ function drawHUD() {
   ctx.fillText('× ' + state.coins, coinX + 18, pad + 2);
   // score + level (+ speed boost indicator)
   ctx.textAlign = 'right';
-  const label = (player.hyper > 0 ? '🎵 ' : '') + (player.fast ? '⚡ ' : '') + 'WORLD ' + (state.level + 1) + '   ★ ' + state.score;
+  const label = (player.sleep > 0 ? '💤 ' : '') + (player.hyper > 0 ? '🎵 ' : '') + (player.fast ? '⚡ ' : '') + 'WORLD ' + (state.level + 1) + '   ★ ' + state.score;
   ctx.strokeText(label, W - pad, pad + 2);
   ctx.fillText(label, W - pad, pad + 2);
 }
