@@ -531,6 +531,8 @@ function handleTap() {
     player.gun = false; player.fireCD = 0;
     loadLevel(0);
     state.mode = 'play';
+  } else if (state.mode === 'ending') {
+    if (state.modeTimer > 60) state.modeTimer = 575; // tap to skip the ceremony
   } else if (state.mode === 'play') {
     state.mode = 'paused';
   } else if (state.mode === 'paused') {
@@ -784,6 +786,15 @@ function spawnParticles(x, y, color, n) {
 
 // ============ UPDATE ============
 function update() {
+  if (state.mode === 'ending') {
+    // medal ceremony: ship lands, the Councilwoman walks out, the medal appears
+    state.modeTimer++;
+    if (state.modeTimer === 40) sfx.drop();
+    if (state.modeTimer === 205) sfx.aloha();
+    if (state.modeTimer === 325) sfx.win();
+    if (state.modeTimer > 580) { state.mode = 'win'; onRunEnd(); }
+    return;
+  }
   if (state.mode === 'dead' || state.mode === 'levelclear' || state.mode === 'amnesia') {
     state.modeTimer--;
     if (state.modeTimer <= 0) {
@@ -1216,10 +1227,19 @@ function update() {
   // --- flag / level end ---
   const midX = player.x + player.w / 2, midY = player.y + player.h / 2;
   if (tileAt(midX, midY) === 'F' || tileAt(midX, midY + player.h / 2 - 2) === 'F') {
-    state.mode = 'levelclear';
-    state.modeTimer = 120;
     state.score += 1000;
-    sfx.win();
+    if (state.level === LEVELS.length - 1) {
+      // the grand finale: the Council arrives to honor Lilo & Stitch
+      state.mode = 'ending';
+      state.modeTimer = 0;
+      state.ending = { px: player.x, gy: player.y + player.h };
+      player.vx = 0; player.vy = 0;
+      sfx.aloha();
+    } else {
+      state.mode = 'levelclear';
+      state.modeTimer = 120;
+      sfx.win();
+    }
   }
 
   // --- particles & block bumps ---
@@ -1625,9 +1645,10 @@ function draw() {
   }
 
   // player
-  if (state.mode === 'play' || state.mode === 'levelclear' || state.mode === 'paused') {
+  if (state.mode === 'play' || state.mode === 'levelclear' || state.mode === 'paused' || state.mode === 'ending') {
     if (player.flying) drawSaucerAt(player.x + player.w / 2, player.y + player.h + 8, 0, keys.jump, false);
     if (!(player.invuln > 0 && Math.floor(player.invuln / 4) % 2)) drawPlayer();
+    if (state.mode === 'ending' && state.ending) drawEnding();
     if (player.sleep > 0) {
       // Zzz drifting up while he naps
       ctx.fillStyle = '#fff';
@@ -3235,6 +3256,253 @@ function drawLiloPlayer() {
   ctx.restore();
 }
 
+function drawEnding() {
+  const t = state.modeTimer, e = state.ending;
+  const gy = e.gy;
+  // Stitch came to celebrate beside Lilo
+  drawStitchNPC(e.px - 42, gy);
+  // the Council ship comes down (kept on screen even at the level's edge)
+  const viewW = W / SCALE;
+  const shipX = Math.max(e.px + 80, Math.min(camX + viewW * 0.75, e.px + 190));
+  const shipY = gy - Math.max(0, 150 - t) * 3.4;
+  drawBigShip(shipX, shipY, t);
+  // the Grand Councilwoman walks down the ramp
+  if (t > 200) {
+    const walk = Math.min(1, (t - 200) / 100);
+    const cwx = shipX - 55 - (shipX - 55 - (e.px + 55)) * walk;
+    drawCouncilwoman(cwx, gy, t, walk < 1);
+  }
+  // the Golden Medal rises with sparkles
+  if (t > 320) {
+    const rise = Math.min(1, (t - 320) / 60);
+    drawMedal(e.px - 16, gy - 78 - rise * 34 + Math.sin(t / 15) * 4, t);
+  }
+}
+
+function drawStitchNPC(x, gy) {
+  // a proud little Stitch, arms up in victory
+  const w = TILE * 0.62, h = TILE * 0.8;
+  const py = gy - h, cx = x;
+  const BLUE = '#3d7bc9', DARK = '#26508f', BELLY = '#bfe0f4', PINK = '#e88db4';
+  const headY = py + h * 0.30;
+  ctx.save();
+  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = DARK;
+  for (const s of [-1, 1]) {
+    ctx.save();
+    ctx.translate(cx + s * 12, headY - 5);
+    ctx.rotate(s * 1.15);
+    ctx.fillStyle = BLUE;
+    ctx.beginPath();
+    ctx.ellipse(0, -11, 6, 14, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = PINK;
+    ctx.beginPath();
+    ctx.ellipse(0, -9, 3.2, 8.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.fillStyle = BLUE;
+  for (const s of [-1, 1]) {
+    ctx.beginPath();
+    ctx.ellipse(cx + s * 7, py + h - 5, 7, 5.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.beginPath();
+  ctx.ellipse(cx, py + h * 0.62, 12.5, h * 0.30, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = BELLY;
+  ctx.beginPath();
+  ctx.ellipse(cx, py + h * 0.66, 7.5, h * 0.20, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = BLUE;
+  for (const s of [-1, 1]) {
+    ctx.save();
+    ctx.translate(cx + s * 12, py + h * 0.5);
+    ctx.rotate(s * 2.5);
+    ctx.beginPath();
+    ctx.ellipse(0, 6, 4, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.fillStyle = BLUE;
+  ctx.beginPath();
+  ctx.ellipse(cx, headY, 15.5, 13, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = BELLY;
+  ctx.beginPath();
+  ctx.ellipse(cx, headY + 4.5, 9, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#14181f';
+  for (const s of [-1, 1]) {
+    ctx.save();
+    ctx.translate(cx + s * 6.2, headY - 1.5);
+    ctx.rotate(s * 0.35);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 3.6, 5.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(cx - 5.4, headY - 3, 1.3, 0, Math.PI * 2);
+  ctx.arc(cx + 7, headY - 3, 1.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#1b2a45';
+  ctx.beginPath();
+  ctx.ellipse(cx, headY + 3.8, 4.2, 2.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#1b2a45';
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.arc(cx, headY + 5, 6, 0.35, Math.PI - 0.35);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawBigShip(cx, baseY, t) {
+  const landed = t >= 150;
+  ctx.save();
+  // landing legs near the ground
+  if (baseY > state.ending.gy - 220) {
+    ctx.strokeStyle = '#5d6a8a';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(cx - 40, baseY - 24); ctx.lineTo(cx - 52, baseY);
+    ctx.moveTo(cx + 40, baseY - 24); ctx.lineTo(cx + 52, baseY);
+    ctx.stroke();
+  }
+  // glass dome + hull
+  ctx.fillStyle = 'rgba(170,225,255,0.5)';
+  ctx.beginPath();
+  ctx.ellipse(cx, baseY - 42, 36, 30, 0, Math.PI, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#9aa7c7';
+  ctx.beginPath();
+  ctx.ellipse(cx, baseY - 34, 68, 22, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#5d6a8a';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  // blinking lights
+  ctx.fillStyle = '#ffd94d';
+  for (let i = -2; i <= 2; i++) {
+    if ((i + Math.floor(t / 10)) % 2 === 0) {
+      ctx.beginPath();
+      ctx.arc(cx + i * 26, baseY - 30 + Math.abs(i) * 3, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  // thrusters while descending, ramp once landed
+  if (!landed) {
+    ctx.fillStyle = 'rgba(125,220,255,0.5)';
+    ctx.beginPath();
+    ctx.ellipse(cx, baseY - 6, 26, 12, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (t > 170) {
+    ctx.fillStyle = '#b9c7d6';
+    ctx.beginPath();
+    ctx.moveTo(cx - 30, baseY - 22);
+    ctx.lineTo(cx - 78, baseY);
+    ctx.lineTo(cx - 20, baseY);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawCouncilwoman(x, gy, t, walking) {
+  // the Grand Councilwoman: tall, serene, high collar and long robe
+  const bob = walking ? Math.sin(t / 4) * 1.5 : 0;
+  const ROBE = '#4a3f7a', ROBE2 = '#5d5296', CSKIN = '#cfc4e8';
+  ctx.save();
+  ctx.fillStyle = ROBE;
+  ctx.beginPath();
+  ctx.moveTo(x - 7, gy - 62 + bob);
+  ctx.lineTo(x + 7, gy - 62 + bob);
+  ctx.lineTo(x + 16, gy);
+  ctx.lineTo(x - 16, gy);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = ROBE2;
+  ctx.fillRect(x - 2, gy - 62 + bob, 4, 62);
+  // high collar
+  ctx.beginPath();
+  ctx.moveTo(x - 14, gy - 60 + bob);
+  ctx.lineTo(x, gy - 78 + bob);
+  ctx.lineTo(x + 14, gy - 60 + bob);
+  ctx.closePath();
+  ctx.fill();
+  // long neck + elongated head
+  ctx.fillStyle = CSKIN;
+  ctx.fillRect(x - 2.5, gy - 74 + bob, 5, 14);
+  ctx.beginPath();
+  ctx.ellipse(x, gy - 84 + bob, 7.5, 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // big dark almond eyes + gentle smile
+  ctx.fillStyle = '#2a2440';
+  for (const s of [-1, 1]) {
+    ctx.save();
+    ctx.translate(x + s * 3.4, gy - 86 + bob);
+    ctx.rotate(s * 0.5);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 2, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.strokeStyle = '#8a80b0';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.arc(x, gy - 78 + bob, 2.5, 0.4, Math.PI - 0.4);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawMedal(x, y, t) {
+  ctx.save();
+  // red ribbon
+  ctx.fillStyle = '#c62f42';
+  ctx.beginPath();
+  ctx.moveTo(x - 10, y - 28); ctx.lineTo(x - 3, y - 28); ctx.lineTo(x + 2, y - 6); ctx.lineTo(x - 5, y - 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x + 10, y - 28); ctx.lineTo(x + 3, y - 28); ctx.lineTo(x - 2, y - 6); ctx.lineTo(x + 5, y - 6);
+  ctx.closePath();
+  ctx.fill();
+  // gold disc with a star
+  ctx.fillStyle = '#ffd24a';
+  ctx.beginPath();
+  ctx.arc(x, y, 15, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#d4a017';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.fillStyle = '#b8860b';
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const rr = i % 2 ? 3.5 : 8;
+    const a = -Math.PI / 2 + i * Math.PI / 5;
+    const sx = x + Math.cos(a) * rr, sy = y + Math.sin(a) * rr;
+    if (i) ctx.lineTo(sx, sy); else ctx.moveTo(sx, sy);
+  }
+  ctx.closePath();
+  ctx.fill();
+  // orbiting sparkles
+  ctx.fillStyle = '#fff8d0';
+  for (let i = 0; i < 4; i++) {
+    const a = t / 12 + i * Math.PI / 2;
+    ctx.fillRect(x + Math.cos(a) * 26 - 1.5, y + Math.sin(a) * 26 - 1.5, 3, 3);
+  }
+  ctx.restore();
+}
+
 function drawHUD() {
   ctx.font = 'bold 20px -apple-system, sans-serif';
   ctx.textAlign = 'left';
@@ -3278,6 +3546,23 @@ function drawHeart(x, y, s) {
 
 function drawOverlays() {
   if (state.mode === 'play') return;
+  if (state.mode === 'ending') {
+    // ceremony captions over the live scene
+    const t = state.modeTimer;
+    const small = Math.min(24, W * 0.04, H * 0.06);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.font = 'bold ' + small + 'px -apple-system, sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    ctx.lineWidth = 4;
+    const msg = t < 150 ? '👀 Something is landing…'
+      : t < 320 ? 'The Grand Councilwoman has arrived!'
+      : '🏅 A Golden Medal for Lilo & Stitch!';
+    ctx.strokeText(msg, W / 2, H * 0.1);
+    ctx.fillText(msg, W / 2, H * 0.1);
+    return;
+  }
   ctx.fillStyle = 'rgba(0,0,0,0.55)';
   ctx.fillRect(0, 0, W, H);
   ctx.textAlign = 'center';

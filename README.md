@@ -66,6 +66,9 @@ Difficulty ramps up steadily: wider gaps, more villains, and armed enemies in th
 Levels also grow **longer**: +10% per level from World 4, +20% per level from World 7
 (World 12 is 2.5× its base length).
 
+Finish World 12 and the **Grand Councilwoman's ship lands** for the grand finale: she steps out
+and awards Lilo & Stitch a **golden medal**. (Tap to skip the ceremony.)
+
 ### The heroes
 
 - **Stitch-inspired blue alien** — big floppy ears, four arms once Lilo joins the team.
