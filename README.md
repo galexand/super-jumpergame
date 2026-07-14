@@ -182,6 +182,7 @@ and awards Lilo & Stitch a **golden medal**. (Tap to skip the ceremony.)
 | `ohana-karts.html` | The beach kart racing game. |
 | `whack-hamsterviel.html` | The whack-a-mole game. |
 | `serve.py` | Dev server with no-cache headers on port 8642. |
+| `REFERENCES.md` | Character/scene reference links and the rules for adding new content. |
 | `.claude/launch.json` | Preview-server config for Claude Code. |
 
 Built with ❤️ by Claude Code for a young platforming fan and his ohana.
