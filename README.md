@@ -14,6 +14,7 @@ drop a new `.html` file in the folder and add one entry to the `GAMES` array in 
 |---|---|---|
 | **Ohana Karts** | `ohana-karts.html` | Beach kart race: play Lilo or Stitch, dodge the villains, beat your rival to the finish |
 | **Super Jumper** | `super-jumper.html` | 12-world platform adventure with friends, experiments and a golden medal |
+| **Whack Hämsterviel** | `whack-hamsterviel.html` | Whack-a-mole: bonk Hämsterviel with your finger, spare the friends, beat the clock |
 
 ---
 
@@ -34,35 +35,48 @@ half of the road), keyboard **↑ ↓** or `W`/`S`; on the picker `1` = Stitch, 
 
 ---
 
+# 🔨 Whack Hämsterviel
+
+A classic whack-a-mole. **Hämsterviel** keeps popping out of burrows on the beach — **tap him on
+the head** to bonk him for points (chain hits for a combo bonus). But friends pop up too — hit
+**Stitch, Lilo or Angel** by mistake and you lose points *and* time. The game speeds up as the
+**45-second** clock runs down. Best score is saved on the device. Just tap — no other controls.
+
+---
+
 # 🌺 Super Jumper
 
 ---
 
 ## 🚀 How to start the arcade
 
-### Play on this Mac
+### Online — the easiest way
+
+The arcade is published with **GitHub Pages**, so it is already live: open the repository's Pages
+URL (**Settings → Pages** shows it) on any phone, tablet or computer — no setup, nothing to install.
+Every push updates the live site automatically.
+
+On iPhone or iPad, open that URL in Safari and tap **Share → Add to Home Screen**: the arcade then
+launches full-screen, exactly like a native app.
+
+### Locally, from the repository
 
 ```bash
-cd ~/galexand/super-jumpergame
+cd super-jumpergame
 python3 serve.py
 ```
 
-Then open <http://localhost:8642> in your browser — the home page lists all the games.
+Then open <http://localhost:8642> — the home page lists all the games. Press `Ctrl+C` to stop.
 
 `serve.py` is a tiny wrapper around Python's built-in web server that adds **no-cache headers**, so
-after any change to the game a simple page reload is always enough (no stale versions).
+after any change a plain page reload always gets the newest version (no stale copies).
 
-### Play on iPhone / iPad (same Wi-Fi)
+### Locally, on an iPhone / iPad on the same Wi-Fi
 
-1. Start the server on the Mac (see above) and keep it running.
-2. Find the Mac's IP address: **System Settings → Wi-Fi → Details** (e.g. `192.168.1.23`).
-3. On the iPad/iPhone, open Safari and go to `http://YOUR-MAC-IP:8642`.
-4. Tap **Share → Add to Home Screen** — the game launches full-screen like a real app.
-
-### Play from anywhere (no Mac needed)
-
-Drag the whole folder onto [Netlify Drop](https://app.netlify.com/drop) (or enable GitHub Pages on
-this repo) — you get a permanent URL that works on any device.
+1. Start the local server on your computer (see above) and leave it running.
+2. Find the computer's IP address (macOS: **System Settings → Wi-Fi → Details**), e.g. `192.168.1.23`.
+3. On the iPad or iPhone, open Safari and go to `http://YOUR-IP:8642`.
+4. Tap **Share → Add to Home Screen** for the full-screen app experience.
 
 ---
 
@@ -166,6 +180,7 @@ and awards Lilo & Stitch a **golden medal**. (Tap to skip the ceremony.)
 | `index.html` | The arcade home page — lists all games alphabetically (`GAMES` array). |
 | `super-jumper.html` | The platformer — engine, levels, art, sound, UI. Edit levels in the `LEVELS` array (legend in the comments above it). |
 | `ohana-karts.html` | The beach kart racing game. |
+| `whack-hamsterviel.html` | The whack-a-mole game. |
 | `serve.py` | Dev server with no-cache headers on port 8642. |
 | `.claude/launch.json` | Preview-server config for Claude Code. |
 

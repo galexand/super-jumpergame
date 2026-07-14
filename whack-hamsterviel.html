@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Whack Hämsterviel</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #000;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    position: fixed;
+    cursor: default;
+  }
+  #game { display: block; width: 100%; height: 100%; }
+  #homeLink {
+    position: fixed;
+    top: max(10px, env(safe-area-inset-top));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    font: 600 14px -apple-system, sans-serif;
+    color: #fff;
+    text-decoration: none;
+    background: rgba(0,0,0,0.35);
+    padding: 5px 12px;
+    border-radius: 14px;
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<a id="homeLink" href="index.html">← Games</a>
+
+<script>
+'use strict';
+
+// ============ SETUP ============
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W = 0, H = 0;
+
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layoutHoles();
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 100));
+
+// ============ SOUND ============
+let audioCtx = null;
+function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+function beep(freq, dur, type, vol, slide) {
+  if (!audioCtx) return;
+  type = type || 'square'; vol = vol || 0.07; slide = slide || 0;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(40, freq + slide), audioCtx.currentTime + dur);
+  g.gain.setValueAtTime(vol, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(); o.stop(audioCtx.currentTime + dur);
+}
+const sfx = {
+  pop()   { beep(520, 0.09, 'square', 0.05, 220); },
+  bonk()  { beep(180, 0.14, 'square', 0.09, -110); setTimeout(() => beep(1000, 0.1, 'square', 0.05), 40); },
+  ouch()  { beep(300, 0.3, 'sawtooth', 0.08, -170); },
+  tick()  { beep(760, 0.05, 'square', 0.04); },
+  go()    { beep(880, 0.35, 'square', 0.09); },
+  over()  { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.2, 'square', 0.07), i * 130)); },
+};
+
+// ============ STATE ============
+const GAME_TIME = 45; // seconds
+const RISE = 0.85;    // how far a critter lifts out of its burrow (× hole radius)
+function critterY(h) { return h.cy - h.occ.up * h.r * RISE; }
+const state = { mode: 'title', score: 0, best: 0, timeLeft: GAME_TIME, t: 0, combo: 0, comboT: 0 };
+let holes = [];       // {cx, cy, r}
+let pops = [];        // bonk stars / effects
+let hand = null;      // { x, y, t } cartoon poke
+
+state.best = parseInt(localStorage.getItem('whackHamBest') || '0', 10) || 0;
+
+function layoutHoles() {
+  holes = [];
+  const cols = 3, rows = 3;
+  const top = H * 0.24, bot = H * 0.97;
+  const left = W * 0.06, right = W * 0.94;
+  const cw = (right - left) / cols, ch = (bot - top) / rows;
+  const r = Math.min(cw, ch) * 0.34;
+  for (let row = 0; row < rows; row++) {
+    for (let c = 0; c < cols; c++) {
+      holes.push({
+        cx: left + (c + 0.5) * cw,
+        cy: top + (row + 0.62) * ch,
+        r,
+        occ: null,       // occupant: { type, up, life, state }
+      });
+    }
+  }
+}
+
+function startGame() {
+  state.mode = 'play';
+  state.score = 0;
+  state.timeLeft = GAME_TIME;
+  state.t = 0;
+  state.combo = 0;
+  state.comboT = 0;
+  pops = [];
+  hand = null;
+  holes.forEach(h => h.occ = null);
+  state.spawnT = 30;
+  sfx.go();
+}
+
+// difficulty ramps up as time runs down
+function difficulty() {
+  return 1 - state.timeLeft / GAME_TIME; // 0 -> 1
+}
+
+function spawnCritter() {
+  const empty = holes.filter(h => !h.occ);
+  if (!empty.length) return;
+  const h = empty[Math.floor(Math.random() * empty.length)];
+  const d = difficulty();
+  // most are Hämsterviel; some are friends you must NOT hit (more later on)
+  const friendChance = 0.16 + d * 0.16;
+  let type = 'H';
+  if (Math.random() < friendChance) {
+    type = ['S', 'L', 'A'][Math.floor(Math.random() * 3)];
+  }
+  const upTime = 95 - d * 45 + Math.random() * 25; // frames fully up
+  h.occ = { type, up: 0, state: 'rising', life: upTime, wob: Math.random() * 6 };
+}
+
+// ============ INPUT ============
+function whackAt(px, py) {
+  hand = { x: px, y: py, t: 0 };
+  let hitSomething = false;
+  for (const h of holes) {
+    if (!h.occ || h.occ.state === 'bonked') continue;
+    if (h.occ.up < 0.35) continue;
+    const dx = px - h.cx, dy = py - critterY(h);
+    if (dx * dx + dy * dy < (h.r * 1.15) * (h.r * 1.15)) {
+      hitSomething = true;
+      if (h.occ.type === 'H') {
+        // bonk!
+        state.combo++;
+        state.comboT = 60;
+        const pts = 10 + Math.min(20, (state.combo - 1) * 2);
+        state.score += pts;
+        h.occ.state = 'bonked';
+        h.occ.life = 18;
+        sfx.bonk();
+        addPop(h.cx, critterY(h), '+' + pts, '#ffe066', 'star');
+      } else {
+        // hit a friend — oops!
+        state.score = Math.max(0, state.score - 5);
+        state.timeLeft = Math.max(0, state.timeLeft - 2);
+        state.combo = 0;
+        h.occ.state = 'falling';
+        sfx.ouch();
+        addPop(h.cx, critterY(h), 'OUCH -5', '#ff6b6b', 'text');
+      }
+      break; // one whack, one target
+    }
+  }
+  if (!hitSomething) state.combo = 0;
+}
+
+function addPop(x, y, text, color, kind) {
+  pops.push({ x, y, text, color, kind, t: 0, life: kind === 'star' ? 30 : 44,
+    stars: kind === 'star' ? Array.from({ length: 6 }, () => ({
+      a: Math.random() * Math.PI * 2, v: 2 + Math.random() * 3,
+    })) : null });
+}
+
+function tapAt(px, py) {
+  initAudio();
+  if (state.mode === 'title' || state.mode === 'over') {
+    startGame();
+  } else if (state.mode === 'play') {
+    whackAt(px, py);
+  }
+}
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) tapAt(t.clientX, t.clientY);
+}, { passive: false });
+canvas.addEventListener('mousedown', e => tapAt(e.clientX, e.clientY));
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'Enter') { initAudio(); if (state.mode !== 'play') startGame(); e.preventDefault(); }
+});
+
+// ============ UPDATE ============
+function update() {
+  state.t++;
+  // effects run always
+  for (let i = pops.length - 1; i >= 0; i--) {
+    const p = pops[i];
+    p.t++;
+    if (p.stars) p.stars.forEach(s => { s.a += 0.02; });
+    if (p.t >= p.life) pops.splice(i, 1);
+  }
+  if (hand) { hand.t++; if (hand.t > 16) hand = null; }
+
+  if (state.mode !== 'play') return;
+
+  // countdown
+  if (state.t % 60 === 0 && state.timeLeft > 0) {
+    state.timeLeft--;
+    if (state.timeLeft <= 5 && state.timeLeft > 0) sfx.tick();
+    if (state.timeLeft === 0) {
+      state.mode = 'over';
+      if (state.score > state.best) {
+        state.best = state.score;
+        try { localStorage.setItem('whackHamBest', String(state.best)); } catch (e) {}
+        state.newBest = true;
+      } else state.newBest = false;
+      sfx.over();
+    }
+  }
+  if (state.comboT > 0) state.comboT--; else state.combo = 0;
+
+  // spawn critters
+  const d = difficulty();
+  state.spawnT--;
+  if (state.spawnT <= 0) {
+    spawnCritter();
+    state.spawnT = (58 - d * 34) + Math.random() * (30 - d * 18);
+  }
+
+  // animate occupants
+  for (const h of holes) {
+    const o = h.occ;
+    if (!o) continue;
+    if (o.state === 'rising') {
+      o.up += 0.14;
+      if (o.up >= 1) { o.up = 1; o.state = 'up'; sfx.pop(); }
+    } else if (o.state === 'up') {
+      o.life--;
+      o.wob += 0.15;
+      if (o.life <= 0) o.state = 'falling';
+    } else if (o.state === 'falling') {
+      o.up -= 0.16;
+      if (o.up <= 0) h.occ = null;
+    } else if (o.state === 'bonked') {
+      o.life--;
+      o.up = Math.max(0, o.up - 0.05);
+      if (o.life <= 0) h.occ = null;
+    }
+  }
+}
+
+// ============ DRAW ============
+function draw() {
+  const t = Date.now();
+  // sky
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#3f9bd9');
+  grad.addColorStop(0.4, '#8fd0ee');
+  grad.addColorStop(0.6, '#ffe9c4');
+  grad.addColorStop(1, '#e6c98f');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  // sun + clouds
+  ctx.fillStyle = '#ffd94d';
+  ctx.beginPath();
+  ctx.arc(W * 0.85, H * 0.12, 24, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  for (let i = 0; i < 4; i++) {
+    const cx = (i * 260 + 80 + Math.sin(t / 3000 + i) * 20) % (W + 200) - 100;
+    const cy = H * 0.09 + (i % 2) * 34;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 16, 0, Math.PI * 2);
+    ctx.arc(cx + 20, cy - 7, 20, 0, Math.PI * 2);
+    ctx.arc(cx + 42, cy, 15, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // sandy field
+  ctx.fillStyle = '#e8c98a';
+  ctx.fillRect(0, H * 0.2, W, H * 0.8);
+  ctx.fillStyle = '#d9b673';
+  ctx.fillRect(0, H * 0.2, W, 6);
+  // little grass tufts
+  ctx.strokeStyle = '#7fc25c';
+  ctx.lineWidth = 3;
+  for (let i = 0; i < 22; i++) {
+    const gx = (i * 97 % W), gy = H * 0.24 + (i * 53 % (H * 0.7));
+    ctx.beginPath();
+    ctx.moveTo(gx, gy); ctx.lineTo(gx - 4, gy - 8);
+    ctx.moveTo(gx, gy); ctx.lineTo(gx, gy - 10);
+    ctx.moveTo(gx, gy); ctx.lineTo(gx + 4, gy - 8);
+    ctx.stroke();
+  }
+
+  // holes (back), critters, holes (front rim)
+  for (const h of holes) {
+    // hole opening
+    ctx.fillStyle = '#6b4a28';
+    ctx.beginPath();
+    ctx.ellipse(h.cx, h.cy, h.r, h.r * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#4d3419';
+    ctx.beginPath();
+    ctx.ellipse(h.cx, h.cy + 2, h.r * 0.86, h.r * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // critter, clipped so its lower half hides in the hole
+    if (h.occ && h.occ.up > 0.01) {
+      const o = h.occ;
+      const cy = critterY(h);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(h.cx - h.r * 1.6, 0, h.r * 3.2, h.cy + h.r * 0.2);
+      ctx.clip();
+      const wob = Math.sin(o.wob) * 3 * (o.state === 'up' ? 1 : 0);
+      if (o.type === 'H') drawHamster(h.cx + wob, cy, h.r, o.state === 'bonked');
+      else if (o.type === 'S') drawStitch(h.cx + wob, cy, h.r);
+      else if (o.type === 'L') drawLilo(h.cx + wob, cy, h.r);
+      else drawAngel(h.cx + wob, cy, h.r);
+      ctx.restore();
+    }
+
+    // front rim (mound lip) to sell "coming out of the hole"
+    ctx.fillStyle = '#c9a45c';
+    ctx.beginPath();
+    ctx.ellipse(h.cx, h.cy + h.r * 0.3, h.r * 1.05, h.r * 0.42, 0, 0, Math.PI);
+    ctx.fill();
+    ctx.fillStyle = '#b8934a';
+    ctx.beginPath();
+    ctx.ellipse(h.cx, h.cy + h.r * 0.3, h.r * 1.05, h.r * 0.2, 0, 0, Math.PI);
+    ctx.fill();
+  }
+
+  // pop effects
+  for (const p of pops) {
+    const a = 1 - p.t / p.life;
+    if (p.kind === 'star') {
+      ctx.fillStyle = p.color;
+      for (const s of p.stars) {
+        const d = s.v * p.t;
+        drawStar(p.x + Math.cos(s.a) * d, p.y + Math.sin(s.a) * d - p.t, 4 * a + 1);
+      }
+    }
+    ctx.globalAlpha = Math.min(1, a * 1.4);
+    ctx.fillStyle = p.color;
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    ctx.lineWidth = 4;
+    ctx.font = 'bold ' + Math.max(18, W * 0.035) + 'px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.strokeText(p.text, p.x, p.y - 26 - p.t * 0.6);
+    ctx.fillText(p.text, p.x, p.y - 26 - p.t * 0.6);
+    ctx.globalAlpha = 1;
+  }
+
+  // the poking finger
+  if (hand) drawHand(hand.x, hand.y, hand.t);
+
+  drawHUD();
+  drawOverlays();
+}
+
+function drawStar(x, y, r) {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const rr = i % 2 ? r * 0.45 : r;
+    const a = -Math.PI / 2 + i * Math.PI / 5;
+    const sx = x + Math.cos(a) * rr, sy = y + Math.sin(a) * rr;
+    if (i) ctx.lineTo(sx, sy); else ctx.moveTo(sx, sy);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawHand(x, y, t) {
+  // a cartoon finger poking down
+  const dip = t < 8 ? t : 16 - t;
+  const yy = y - 20 + dip * 1.5;
+  ctx.save();
+  ctx.translate(x, yy);
+  // pointing finger
+  ctx.fillStyle = '#f2c9a4';
+  ctx.strokeStyle = '#c99a6e';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(-9, -46, 18, 34, 8);
+  ctx.fill();
+  ctx.stroke();
+  // fingertip
+  ctx.beginPath();
+  ctx.arc(0, -12, 9, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  // fist
+  ctx.fillStyle = '#e8b88c';
+  ctx.beginPath();
+  ctx.roundRect(-13, -60, 26, 20, 7);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ---- critters ----
+function drawHamster(cx, cy, r, bonked) {
+  const s = r / 34;
+  const FUR = '#f4f4f6', PINK = '#f3aec6';
+  // ears
+  ctx.fillStyle = FUR;
+  ctx.beginPath();
+  ctx.arc(cx - 15 * s, cy - 20 * s, 10 * s, 0, Math.PI * 2);
+  ctx.arc(cx + 15 * s, cy - 20 * s, 10 * s, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = PINK;
+  ctx.beginPath();
+  ctx.arc(cx - 15 * s, cy - 20 * s, 5 * s, 0, Math.PI * 2);
+  ctx.arc(cx + 15 * s, cy - 20 * s, 5 * s, 0, Math.PI * 2);
+  ctx.fill();
+  // head
+  ctx.fillStyle = FUR;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, 24 * s, 26 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#d7d7de';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  if (bonked) {
+    // dizzy eyes + bump
+    ctx.strokeStyle = '#7a2c20';
+    ctx.lineWidth = 2.4 * s;
+    for (const ex of [-9, 9]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + ex * s - 4 * s, cy - 7 * s); ctx.lineTo(cx + ex * s + 4 * s, cy + 1 * s);
+      ctx.moveTo(cx + ex * s + 4 * s, cy - 7 * s); ctx.lineTo(cx + ex * s - 4 * s, cy + 1 * s);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#c9506f';
+    ctx.beginPath();
+    ctx.arc(cx, cy - 30 * s, 6 * s, 0, Math.PI * 2);
+    ctx.fill();
+    // open "ow" mouth
+    ctx.fillStyle = '#7a2c20';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 12 * s, 5 * s, 4 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    // red eyes + glasses look
+    ctx.fillStyle = '#d8283c';
+    ctx.beginPath();
+    ctx.arc(cx - 9 * s, cy - 3 * s, 5.5 * s, 0, Math.PI * 2);
+    ctx.arc(cx + 9 * s, cy - 3 * s, 5.5 * s, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#4a0810';
+    ctx.beginPath();
+    ctx.arc(cx - 9 * s, cy - 3 * s, 2.4 * s, 0, Math.PI * 2);
+    ctx.arc(cx + 9 * s, cy - 3 * s, 2.4 * s, 0, Math.PI * 2);
+    ctx.fill();
+    // buck teeth
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(cx - 5 * s, cy + 8 * s, 4.5 * s, 7 * s);
+    ctx.fillRect(cx + 0.5 * s, cy + 8 * s, 4.5 * s, 7 * s);
+    ctx.strokeStyle = '#d0d0d0';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(cx - 5 * s, cy + 8 * s, 4.5 * s, 7 * s);
+    // nose
+    ctx.fillStyle = PINK;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 5 * s, 3 * s, 2.2 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // angry brows
+    ctx.strokeStyle = '#9a9aa5';
+    ctx.lineWidth = 2.2 * s;
+    ctx.beginPath();
+    ctx.moveTo(cx - 16 * s, cy - 11 * s); ctx.lineTo(cx - 4 * s, cy - 6 * s);
+    ctx.moveTo(cx + 16 * s, cy - 11 * s); ctx.lineTo(cx + 4 * s, cy - 6 * s);
+    ctx.stroke();
+  }
+}
+
+function drawStitch(cx, cy, r) {
+  const s = r / 34;
+  const BLUE = '#3d7bc9', BELLY = '#bfe0f4', PINK = '#e88db4';
+  for (const sg of [-1, 1]) {
+    ctx.save();
+    ctx.translate(cx + sg * 17 * s, cy - 16 * s);
+    ctx.rotate(sg * 1.1);
+    ctx.fillStyle = BLUE;
+    ctx.beginPath();
+    ctx.ellipse(0, -8 * s, 6 * s, 13 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = PINK;
+    ctx.beginPath();
+    ctx.ellipse(0, -7 * s, 3 * s, 8 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.fillStyle = BLUE;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, 25 * s, 24 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = BELLY;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + 6 * s, 14 * s, 12 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#14181f';
+  ctx.beginPath();
+  ctx.ellipse(cx - 8 * s, cy - 4 * s, 4 * s, 5.5 * s, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx + 8 * s, cy - 4 * s, 4 * s, 5.5 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(cx - 9 * s, cy - 6 * s, 1.5 * s, 0, Math.PI * 2);
+  ctx.arc(cx + 7 * s, cy - 6 * s, 1.5 * s, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#1b2a45';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + 3 * s, 4 * s, 2.6 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#1b2a45';
+  ctx.lineWidth = 1.6 * s;
+  ctx.beginPath();
+  ctx.arc(cx, cy + 5 * s, 6 * s, 0.3, Math.PI - 0.3);
+  ctx.stroke();
+}
+
+function drawLilo(cx, cy, r) {
+  const s = r / 34;
+  const SKIN = '#d9976a', HAIR = '#1c1b22';
+  ctx.fillStyle = HAIR;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy - 2 * s, 26 * s, 26 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = SKIN;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + 2 * s, 20 * s, 21 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = HAIR;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy - 12 * s, 22 * s, 12 * s, 0, Math.PI, Math.PI * 2);
+  ctx.fill();
+  // flower
+  ctx.fillStyle = '#f7f7fb';
+  for (let i = 0; i < 5; i++) {
+    const a = i / 5 * Math.PI * 2;
+    ctx.beginPath();
+    ctx.arc(cx + 17 * s + Math.cos(a) * 4 * s, cy - 12 * s + Math.sin(a) * 4 * s, 3 * s, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = '#ffd54d';
+  ctx.beginPath();
+  ctx.arc(cx + 17 * s, cy - 12 * s, 2.4 * s, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#26211f';
+  ctx.beginPath();
+  ctx.arc(cx - 7 * s, cy, 2.4 * s, 0, Math.PI * 2);
+  ctx.arc(cx + 7 * s, cy, 2.4 * s, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#8a4b32';
+  ctx.lineWidth = 2 * s;
+  ctx.beginPath();
+  ctx.arc(cx, cy + 6 * s, 5 * s, 0.3, Math.PI - 0.3);
+  ctx.stroke();
+}
+
+function drawAngel(cx, cy, r) {
+  const s = r / 34;
+  const PINK = '#ef86b8', BELLY = '#fbd6e7';
+  for (const sg of [-1, 1]) {
+    ctx.save();
+    ctx.translate(cx + sg * 14 * s, cy - 16 * s);
+    ctx.rotate(sg * 1.2);
+    ctx.fillStyle = PINK;
+    ctx.beginPath();
+    ctx.ellipse(0, -8 * s, 6 * s, 13 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.fillStyle = PINK;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, 25 * s, 23 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = BELLY;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + 6 * s, 13 * s, 11 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#221a20';
+  ctx.beginPath();
+  ctx.ellipse(cx - 8 * s, cy - 3 * s, 3.4 * s, 4.6 * s, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx + 8 * s, cy - 3 * s, 3.4 * s, 4.6 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(cx - 9 * s, cy - 5 * s, 1.2 * s, 0, Math.PI * 2);
+  ctx.arc(cx + 7 * s, cy - 5 * s, 1.2 * s, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#8c3a63';
+  ctx.lineWidth = 1.6 * s;
+  ctx.beginPath();
+  ctx.arc(cx, cy + 5 * s, 5 * s, 0.3, Math.PI - 0.3);
+  ctx.stroke();
+}
+
+function drawHeart(x, y, s) {
+  ctx.beginPath();
+  ctx.moveTo(x, y + s * 0.3);
+  ctx.bezierCurveTo(x, y - s * 0.3, x - s, y - s * 0.3, x - s, y + s * 0.3);
+  ctx.bezierCurveTo(x - s, y + s * 0.8, x, y + s * 1.1, x, y + s * 1.4);
+  ctx.bezierCurveTo(x, y + s * 1.1, x + s, y + s * 0.8, x + s, y + s * 0.3);
+  ctx.bezierCurveTo(x + s, y - s * 0.3, x, y - s * 0.3, x, y + s * 0.3);
+  ctx.fill();
+}
+
+function drawHUD() {
+  if (state.mode !== 'play') return;
+  const pad = Math.max(14, H * 0.02);
+  ctx.textBaseline = 'top';
+  ctx.font = 'bold 22px -apple-system, sans-serif';
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  ctx.lineWidth = 4;
+  // score
+  ctx.textAlign = 'left';
+  ctx.strokeText('★ ' + state.score, pad, pad);
+  ctx.fillText('★ ' + state.score, pad, pad);
+  // timer
+  ctx.textAlign = 'right';
+  const warn = state.timeLeft <= 5;
+  ctx.fillStyle = warn ? '#ff5555' : '#fff';
+  ctx.strokeText('⏱ ' + state.timeLeft + 's', W - pad, pad);
+  ctx.fillText('⏱ ' + state.timeLeft + 's', W - pad, pad);
+  // combo (below the score, so it never overlaps the ← Games link)
+  if (state.combo >= 2) {
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#ffe066';
+    ctx.font = 'bold ' + Math.max(18, W * 0.036) + 'px -apple-system, sans-serif';
+    ctx.strokeText('COMBO x' + state.combo + '!', pad, pad + 30);
+    ctx.fillText('COMBO x' + state.combo + '!', pad, pad + 30);
+  }
+}
+
+function drawOverlays() {
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  if (state.mode === 'title') {
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#ffd700';
+    ctx.font = 'bold ' + Math.min(46, W * 0.082) + 'px -apple-system, sans-serif';
+    ctx.fillText('BATE-L PE', W / 2, H * 0.3);
+    ctx.fillText('HÄMSTERVIEL! 🔨', W / 2, H * 0.4);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold ' + Math.min(22, W * 0.04) + 'px -apple-system, sans-serif';
+    ctx.fillText('Pocnește-l cu degetul când iese din vizuină!', W / 2, H * 0.54);
+    ctx.font = Math.min(18, W * 0.033) + 'px -apple-system, sans-serif';
+    ctx.fillStyle = '#dce9f5';
+    ctx.fillText('Dar NU lovi prietenii: Stitch, Lilo sau Angel! 💙', W / 2, H * 0.62);
+    ctx.fillStyle = '#ffe066';
+    ctx.font = 'bold ' + Math.min(24, W * 0.045) + 'px -apple-system, sans-serif';
+    ctx.fillText('Atinge ecranul ca să începi!', W / 2, H * 0.74);
+    if (state.best > 0) {
+      ctx.fillStyle = '#fff';
+      ctx.font = '17px -apple-system, sans-serif';
+      ctx.fillText('🏆 Record: ' + state.best, W / 2, H * 0.82);
+    }
+  } else if (state.mode === 'over') {
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#ffd700';
+    ctx.font = 'bold ' + Math.min(52, W * 0.09) + 'px -apple-system, sans-serif';
+    ctx.fillText('Timpul a expirat!', W / 2, H * 0.32);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold ' + Math.min(30, W * 0.056) + 'px -apple-system, sans-serif';
+    ctx.fillText('Scor: ' + state.score, W / 2, H * 0.46);
+    ctx.fillStyle = '#ffe066';
+    ctx.font = 'bold ' + Math.min(24, W * 0.045) + 'px -apple-system, sans-serif';
+    ctx.fillText(state.newBest ? '🎉 Record nou!' : '🏆 Record: ' + state.best, W / 2, H * 0.56);
+    ctx.fillStyle = '#fff';
+    ctx.font = '18px -apple-system, sans-serif';
+    ctx.fillText('Atinge ca să joci din nou', W / 2, H * 0.68);
+  }
+}
+
+// ============ MAIN LOOP ============
+resize();
+let last = 0, acc = 0;
+const STEP = 1000 / 60;
+function loop(t) {
+  requestAnimationFrame(loop);
+  // keep layout in sync even if the initial size was 0 (some webviews)
+  if (W !== window.innerWidth || H !== window.innerHeight || (holes[0] && holes[0].r === 0)) resize();
+  if (!last) last = t;
+  acc += Math.min(t - last, 100);
+  last = t;
+  while (acc >= STEP) { update(); acc -= STEP; }
+  draw();
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
