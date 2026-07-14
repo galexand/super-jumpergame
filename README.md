@@ -62,7 +62,7 @@ launches full-screen, exactly like a native app.
 ### Locally, from the repository
 
 ```bash
-cd super-jumpergame
+cd ohana-arcade-games
 python3 serve.py
 ```
 
