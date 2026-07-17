@@ -830,7 +830,7 @@ function drawRoad(t) {
     if (items) {
       for (const it of items) {
         const sx = p1.x + it.laneX * p1.w;
-        drawSprite(it.obj, sx, p1.y, p1.scale, t);
+        drawSprite(it.obj, sx, p1.y, p1.w, t);
       }
     }
     // Leroy bolts flying toward player rendered along near segments
@@ -848,7 +848,7 @@ function drawLineMarker(zPos, baseIdx, camZ, camX, t, isStart) {
   if (n < 0 || n >= DRAW_DISTANCE) return;
   const p = project(0, 0, zPos, camX, CAMERA_HEIGHT, camZ);
   if (!p || p.z <= CAMERA_DEPTH) return;
-  const sq = Math.max(4, p.w / 10);
+  const sq = Math.max(4, Math.min(28, p.w / 10));
   const rows = Math.max(2, Math.floor((p.w * 2) / sq));
   for (let r = 0; r < 5; r++) {
     for (let c = 0; c < rows; c++) {
@@ -860,7 +860,7 @@ function drawLineMarker(zPos, baseIdx, camZ, camX, t, isStart) {
     ctx.fillStyle = '#c62f42';
     ctx.fillRect(p.x - p.w * 0.9, p.y - sq * 5 - 16 * p.scale, p.w * 1.8, 16 * p.scale);
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold ' + Math.max(9, 12 * p.scale * 30) + 'px -apple-system, sans-serif';
+    ctx.font = 'bold ' + Math.max(9, Math.min(40, 12 * p.scale * 30)) + 'px -apple-system, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('FINISH', p.x, p.y - sq * 5 - 8 * p.scale);
@@ -868,7 +868,13 @@ function drawLineMarker(zPos, baseIdx, camZ, camX, t, isStart) {
 }
 
 function drawSprite(obj, sx, sy, scale, t) {
-  const s = Math.max(0.06, scale * 60);
+  // `scale` here is p1.w in PIXELS (projected road half-width at this depth), not the raw
+  // unscaled project() depth factor — see drawRoad()'s caller. p1.w pixels corresponds to
+  // ROAD_WIDTH world units at that depth, and the 2D sprite-drawing helpers below were authored
+  // assuming roughly 1 world-ish unit ~= 1 pixel at a "normal" viewing distance.
+  // Calibrated by visual testing: keeps sprites readable near the CAMERA_LAG-limited close range
+  // without pinning everything at the max clamp (900 was tried first and always hit the ceiling).
+  const s = Math.max(0.02, Math.min(3, (scale / ROAD_WIDTH) * 3));
   ctx.save();
   ctx.translate(sx, sy);
   ctx.scale(s, s);
@@ -1455,6 +1461,12 @@ function drawOverlays(t) {
     ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 8;
     ctx.strokeText(n > 0 ? String(n) : 'GO!', W / 2, H * 0.4);
     ctx.fillText(n > 0 ? String(n) : 'GO!', W / 2, H * 0.4);
+    ctx.font = Math.min(16, W * 0.032) + 'px -apple-system, sans-serif';
+    ctx.fillStyle = '#dce9f5';
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.lineWidth = 3;
+    ctx.strokeText('◀ ▶ steer · ship flies itself', W / 2, H * 0.55);
+    ctx.fillText('◀ ▶ steer · ship flies itself', W / 2, H * 0.55);
   } else if (state.mode === 'finish') {
     ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(0, 0, W, H);
     const big = Math.min(50, W * 0.085);
@@ -1528,9 +1540,10 @@ function drawLevelSelect(t) {
       ctx.fillText(best ? 'best ' + best.toFixed(1) + 's' : 'no time yet', cx + cw / 2, cy + ch * 0.87);
     }
   }
-  ctx.font = '13px -apple-system, sans-serif';
+  ctx.font = Math.min(13, W * 0.026) + 'px -apple-system, sans-serif';
   ctx.fillStyle = '#dce9f5';
-  ctx.fillText('Beat a track in 1st place to unlock the next!', W / 2, H * 0.94);
+  ctx.fillText('🚀 Auto-accelerates — ◀ ▶ or A/D to steer, tap ✦ to fire lasers', W / 2, H * 0.90);
+  ctx.fillText('Beat a track in 1st place to unlock the next!', W / 2, H * 0.945);
 }
 
 // ============ MAIN LOOP ============
