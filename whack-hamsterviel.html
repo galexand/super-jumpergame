@@ -97,7 +97,7 @@ function critterY(h) { return h.cy - h.occ.up * h.r * RISE; }
 const state = { mode: 'title', score: 0, best: 0, timeLeft: GAME_TIME, t: 0, combo: 0, comboT: 0 };
 let holes = [];       // {cx, cy, r}
 let pops = [];        // bonk stars / effects
-let hand = null;      // { x, y, t } cartoon poke
+let hand = null;      // { x, y, t, hit } Hammerface hammer-head slam
 
 state.best = parseInt(localStorage.getItem('whackHamBest') || '0', 10) || 0;
 
@@ -156,7 +156,6 @@ function spawnCritter() {
 
 // ============ INPUT ============
 function whackAt(px, py) {
-  hand = { x: px, y: py, t: 0 };
   let hitSomething = false;
   for (const h of holes) {
     if (!h.occ || h.occ.state === 'bonked') continue;
@@ -187,6 +186,7 @@ function whackAt(px, py) {
     }
   }
   if (!hitSomething) state.combo = 0;
+  hand = { x: px, y: py, t: 0, hit: hitSomething };
 }
 
 function addPop(x, y, text, color, kind) {
@@ -377,8 +377,8 @@ function draw() {
     ctx.globalAlpha = 1;
   }
 
-  // the poking finger
-  if (hand) drawHand(hand.x, hand.y, hand.t);
+  // Hammerface slamming his hammer-shaped head down on the tap point
+  if (hand) drawHammerface(hand.x, hand.y, hand.t, hand.hit);
 
   drawHUD();
   drawOverlays();
@@ -396,32 +396,172 @@ function drawStar(x, y, r) {
   ctx.fill();
 }
 
-function drawHand(x, y, t) {
-  // a cartoon finger poking down
-  const dip = t < 8 ? t : 16 - t;
-  const yy = y - 20 + dip * 1.5;
+function drawHammerface(x, y, t, hit) {
+  // Hammerface (Experiment 033): his hammer-shaped head IS the mallet.
+  // He swings in from the upper right, head trailing, and slams face-first
+  // onto the tap point, then squashes the hammer block and recovers.
+  const MAIN = '#7e96ad', DARK = '#4d6175', LIGHT = '#c3d2de', EYE = '#14181f', PALE = '#f7f4ea';
+
+  // position/rotation: fast slam (0-3), held squash (3-5), slow recovery (5-16)
+  let yy, rot, dx;
+  if (t <= 3) {
+    const p = 1 - t / 3;
+    yy = (y + 2) - 44 * p * (2 - p);
+    rot = -0.45 * p;
+    dx = 16 * p;
+  } else if (t < 5) {
+    yy = y + 2;
+    rot = 0;
+    dx = 0;
+  } else {
+    const p = (t - 5) / 11;
+    yy = (y + 2) - 44 * Math.pow(p, 1.6);
+    rot = 0.15 * p;
+    dx = 0;
+  }
+
+  // squash scale for the hammer-head block + teeth only (frames 3-5)
+  let bsx = 1, bsy = 1;
+  if (t === 3) { bsx = 1.12; bsy = 0.85; }
+  else if (t === 4) { bsx = 1.06; bsy = 0.93; }
+
   ctx.save();
-  ctx.translate(x, yy);
-  // pointing finger
-  ctx.fillStyle = '#f2c9a4';
-  ctx.strokeStyle = '#c99a6e';
+  ctx.translate(x + dx, yy);
+  ctx.rotate(rot);
+
+  // 1. body (torso), partly off-screen above, like the old fist
+  ctx.fillStyle = MAIN;
+  ctx.strokeStyle = DARK;
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.roundRect(-9, -46, 18, 34, 8);
+  ctx.roundRect(-16, -58, 32, 26, 10);
   ctx.fill();
   ctx.stroke();
-  // fingertip
+  // back-ridge spine triangles
+  ctx.fillStyle = DARK;
   ctx.beginPath();
-  ctx.arc(0, -12, 9, 0, Math.PI * 2);
+  ctx.moveTo(-9, -58); ctx.lineTo(-3, -58); ctx.lineTo(-6, -63); ctx.closePath();
+  ctx.moveTo(1, -58); ctx.lineTo(7, -58); ctx.lineTo(4, -63); ctx.closePath();
   ctx.fill();
-  ctx.stroke();
-  // fist
-  ctx.fillStyle = '#e8b88c';
+
+  // 2. belly patch
+  ctx.fillStyle = LIGHT;
   ctx.beginPath();
-  ctx.roundRect(-13, -60, 26, 20, 7);
+  ctx.ellipse(0, -45, 8, 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 3. stubby arms gripping down toward the head
+  for (const side of [-1, 1]) {
+    ctx.save();
+    ctx.translate(19 * side, -46);
+    ctx.rotate(0.35 * side);
+    ctx.fillStyle = MAIN;
+    ctx.strokeStyle = DARK;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(-4, 0, 8, 15, 4);
+    ctx.fill();
+    ctx.stroke();
+    // tiny claw tips
+    ctx.fillStyle = PALE;
+    ctx.beginPath();
+    ctx.moveTo(-3.5, 15); ctx.lineTo(-0.5, 15); ctx.lineTo(-2, 19); ctx.closePath();
+    ctx.moveTo(0.5, 15); ctx.lineTo(3.5, 15); ctx.lineTo(2, 19); ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // 4. neck (tucks behind the hammer-head block)
+  ctx.fillStyle = MAIN;
+  ctx.strokeStyle = DARK;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(-10, -34, 20, 18, 6);
   ctx.fill();
   ctx.stroke();
-  ctx.restore();
+
+  // 5-8. hammer-head block, end caps, face, teeth — squashed as a unit
+  ctx.save();
+  ctx.translate(0, -10);
+  ctx.scale(bsx, bsy);
+  ctx.translate(0, 10);
+
+  // 5. hammer-head block
+  ctx.fillStyle = MAIN;
+  ctx.strokeStyle = DARK;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(-28, -20, 56, 20, 9);
+  ctx.fill();
+  ctx.stroke();
+
+  // 6. mallet end caps
+  ctx.fillStyle = DARK;
+  ctx.beginPath();
+  ctx.roundRect(-28, -20, 11, 20, { tl: 9, tr: 0, br: 0, bl: 9 });
+  ctx.fill();
+  ctx.beginPath();
+  ctx.roundRect(17, -20, 11, 20, { tl: 0, tr: 9, br: 9, bl: 0 });
+  ctx.fill();
+
+  // 7. face
+  ctx.fillStyle = EYE;
+  ctx.beginPath();
+  ctx.arc(-7, -13, 2.6, 0, Math.PI * 2);
+  ctx.arc(7, -13, 2.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = DARK;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-11, -17); ctx.lineTo(-4, -15);
+  ctx.moveTo(11, -17); ctx.lineTo(4, -15);
+  ctx.stroke();
+  ctx.fillStyle = DARK;
+  ctx.beginPath();
+  ctx.arc(-3, -7, 1.2, 0, Math.PI * 2);
+  ctx.arc(3, -7, 1.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 8. teeth on the striking edge
+  ctx.fillStyle = PALE;
+  ctx.strokeStyle = DARK;
+  ctx.lineWidth = 1;
+  for (const tx of [-9, 0, 9]) {
+    ctx.beginPath();
+    ctx.moveTo(tx - 2.5, -4);
+    ctx.lineTo(tx + 2.5, -4);
+    ctx.lineTo(tx, -1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  ctx.restore(); // end block squash
+
+  // impact flash on the striking edge (frames 3-5, always)
+  if (t >= 3 && t <= 5) {
+    ctx.globalAlpha = t === 3 ? 0.75 : (t === 4 ? 0.4 : 0.15);
+    ctx.fillStyle = PALE;
+    ctx.beginPath();
+    ctx.roundRect(-24, -7, 48, 5, 2.5);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.restore(); // end sprite translate/rotate
+
+  // dust puffs on whiffs only (frames 3-9), anchored to the tap point
+  if (!hit && t >= 3 && t <= 9) {
+    const dt = t - 3;
+    ctx.fillStyle = '#c9a45c';
+    ctx.globalAlpha = 0.6 * (1 - dt / 6);
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.arc(x + side * (14 + dt * 1.5), y + 2, 5 - dt * 0.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
 }
 
 // ---- critters ----
