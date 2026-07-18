@@ -218,7 +218,7 @@ const sfx = {
 const SEGMENT_LENGTH = 200;
 const RUMBLE_LENGTH = 3;
 const ROAD_WIDTH = 1600;          // world half-width used for projection scale
-const DRAW_DISTANCE = 220;
+const DRAW_DISTANCE = 300;
 const FIELD_OF_VIEW = 110;
 const CAMERA_HEIGHT = 950;
 const CAMERA_DEPTH = 1 / Math.tan((FIELD_OF_VIEW / 2) * Math.PI / 180);
@@ -275,7 +275,7 @@ function polygon(x1, y1, x2, y2, x3, y3, x4, y4, color) {
 const LEVELS = [
   { // 1: Beach
     name: tr('levelNames')[0], theme: 'beach', vehicle: 'ship',
-    targetSegments: 420, speedMax: 98, speedAccel: 2.3, offRoadMax: 30, hillAmp: 0,
+    targetSegments: 420, speedMax: 86, speedAccel: 2.1, offRoadMax: 30, hillAmp: 0,
     palette: [
       [22, 34, 22, CURVE.NONE], [24, 40, 24, CURVE.EASY], [24, 40, 24, -CURVE.EASY],
       [18, 60, 18, CURVE.NONE], [26, 34, 26, CURVE.MED], [26, 34, 26, -CURVE.MED],
@@ -286,7 +286,7 @@ const LEVELS = [
   },
   { // 2: Mountain
     name: tr('levelNames')[1], theme: 'mountain', vehicle: 'ship',
-    targetSegments: 560, speedMax: 106, speedAccel: 2.4, offRoadMax: 26, hillAmp: 260,
+    targetSegments: 560, speedMax: 93, speedAccel: 2.2, offRoadMax: 26, hillAmp: 170,
     palette: [
       [18, 26, 18, CURVE.MED], [18, 26, 18, -CURVE.MED], [14, 40, 14, CURVE.NONE],
       [20, 24, 20, CURVE.HARD], [20, 24, 20, -CURVE.HARD], [22, 30, 22, CURVE.EASY],
@@ -297,7 +297,7 @@ const LEVELS = [
   },
   { // 3: Space launch
     name: tr('levelNames')[2], theme: 'space', vehicle: 'ship',
-    targetSegments: 640, speedMax: 116, speedAccel: 2.6, offRoadMax: 34, hillAmp: 60,
+    targetSegments: 640, speedMax: 102, speedAccel: 2.3, offRoadMax: 34, hillAmp: 39,
     palette: [
       [16, 26, 16, CURVE.MED], [16, 26, 16, -CURVE.MED], [14, 34, 14, CURVE.NONE],
       [18, 22, 18, CURVE.HARD], [18, 22, 18, -CURVE.HARD],
@@ -308,7 +308,7 @@ const LEVELS = [
   },
   { // 4: Alien planet
     name: tr('levelNames')[3], theme: 'alien', vehicle: 'ship',
-    targetSegments: 740, speedMax: 124, speedAccel: 2.7, offRoadMax: 34, hillAmp: 320,
+    targetSegments: 740, speedMax: 109, speedAccel: 2.4, offRoadMax: 34, hillAmp: 210,
     palette: [
       [14, 20, 14, CURVE.HARD], [14, 20, 14, -CURVE.HARD], [12, 30, 12, CURVE.NONE],
       [16, 20, 16, CURVE.XHARD], [16, 20, 16, -CURVE.XHARD], [16, 24, 16, CURVE.MED],
@@ -319,7 +319,7 @@ const LEVELS = [
   },
   { // 5: Championship
     name: tr('levelNames')[4], theme: 'champ', vehicle: 'ship',
-    targetSegments: 880, speedMax: 132, speedAccel: 2.9, offRoadMax: 36, hillAmp: 140,
+    targetSegments: 880, speedMax: 116, speedAccel: 2.6, offRoadMax: 36, hillAmp: 91,
     palette: [
       [12, 18, 12, CURVE.XHARD], [12, 18, 12, -CURVE.XHARD], [12, 26, 12, CURVE.NONE],
       [14, 18, 14, CURVE.HARD], [14, 18, 14, -CURVE.HARD], [16, 20, 16, CURVE.MED], [16, 20, 16, -CURVE.MED],
@@ -818,11 +818,13 @@ function update() {
       const secs = player.finZ / 60;
       const lvlNum = state.levelIdx + 1;
       const best = getBest(lvlNum, state.char);
-      if (best === null || secs < best) {
+      if (state.place === 1 && (best === null || secs < best)) {
         setBest(lvlNum, state.char, secs);
         state.bestMsg = tr('newBest');
-      } else {
+      } else if (best !== null) {
         state.bestMsg = tr('bestLabel') + best.toFixed(1) + 's';
+      } else {
+        state.bestMsg = '';
       }
       const unlocked = getUnlocked();
       if (state.place === 1 && lvlNum === unlocked && lvlNum < LEVELS.length) {
@@ -989,7 +991,7 @@ function drawRoad(t) {
     const stripe = idx % (RUMBLE_LENGTH * 2) < RUMBLE_LENGTH;
     const grassColor = stripe ? theme.grass1 : theme.grass2;
     ctx.fillStyle = grassColor;
-    ctx.fillRect(0, p2.y, W, Math.max(1, p1.y - p2.y + 1));
+    ctx.fillRect(0, p2.y, W, Math.max(1, p1.y - p2.y));
 
     const rw1 = p1.w * 1.18, rw2 = p2.w * 1.18;
     polygon(p1.x - rw1, p1.y, p1.x + rw1, p1.y, p2.x + rw2, p2.y, p2.x - rw2, p2.y, stripe ? theme.rumbleA : theme.rumbleB);
@@ -1002,12 +1004,12 @@ function drawRoad(t) {
       polygon(p1.x - lw1, p1.y, p1.x + lw1, p1.y, p2.x + lw2, p2.y, p2.x - lw2, p2.y, 'rgba(255,255,255,0.75)');
     }
 
-    // sprites for this segment, positioned at p1 (fade in over the last ~15
-    // draw-distance segments so they don't hard pop into view)
+    // sprites for this segment, positioned at p1 (fade in only over the far
+    // edge of the draw distance so they don't hard pop into view)
     const items = bucket[n];
-    if (items) {
-      const fadeStart = DRAW_DISTANCE - 15;
-      const alpha = n >= fadeStart ? Math.max(0, (DRAW_DISTANCE - n) / 15) : 1;
+    if (items && n >= 2) {
+      const fadeStart = DRAW_DISTANCE - 40;
+      const alpha = n >= fadeStart ? Math.max(0, (DRAW_DISTANCE - n) / 40) : 1;
       for (const it of items) {
         const sx = p1.x + it.laneX * p1.w;
         if (alpha < 1) ctx.globalAlpha = alpha;
@@ -1015,24 +1017,23 @@ function drawRoad(t) {
         if (alpha < 1) ctx.globalAlpha = 1;
       }
     }
+    // start / finish banners, anchored to this segment's already-projected,
+    // already-occlusion-checked road edge (p1 for the start line at idx 0,
+    // p2 for the finish line at the far edge of the last segment) so they
+    // sit on the road surface and respect the same hillcrest clipping as
+    // the road polygon instead of floating at a stale/flat worldY=0.
+    if (idx === 0) drawLineMarker(p1, true);
+    if (idx === segments.length - 1) drawLineMarker(p2, false);
     // Leroy bolts flying toward player rendered along near segments
     maxY = p2.y;
     prev = { p1, p2, idx };
   }
-  // start / finish markers via bucket-independent z check
-  drawLineMarker(0, baseIdx, camZ, camX, camY, t, true);
-  drawLineMarker(trackLen, baseIdx, camZ, camX, camY, t, false);
 }
 
-function drawLineMarker(zPos, baseIdx, camZ, camX, camY, t, isStart) {
-  const idx = Math.floor(zPos / SEGMENT_LENGTH);
-  const n = idx - baseIdx;
-  if (n < 0 || n >= DRAW_DISTANCE) return;
-  const worldY = (segments[idx] && segments[idx].y) || 0;
-  const p = project(0, worldY, zPos, camX, camY, camZ);
-  if (!p || p.z <= CAMERA_DEPTH) return;
+function drawLineMarker(p, isStart) {
+  if (!p || p.z <= CAMERA_DEPTH || p.w <= 0) return;
   const sq = Math.max(4, Math.min(28, p.w / 10));
-  const rows = Math.max(2, Math.floor((p.w * 2) / sq));
+  const rows = Math.max(2, Math.min(40, Math.floor((p.w * 2) / sq)));
   for (let r = 0; r < 5; r++) {
     for (let c = 0; c < rows; c++) {
       ctx.fillStyle = (r + c) % 2 ? '#fff' : '#222';
@@ -1046,7 +1047,7 @@ function drawLineMarker(zPos, baseIdx, camZ, camX, camY, t, isStart) {
     ctx.font = 'bold ' + Math.max(9, Math.min(40, 12 * p.scale * 30)) + 'px -apple-system, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(tr('finish'), p.x, p.y - sq * 5 - 8 * p.scale);
+    ctx.fillText(tr('finish'), (p.x - p.w) + (rows * sq) / 2, p.y - sq * 5 - 8 * p.scale);
   }
 }
 
@@ -1057,7 +1058,7 @@ function drawSprite(obj, sx, sy, scale, t) {
   // assuming roughly 1 world-ish unit ~= 1 pixel at a "normal" viewing distance.
   // Calibrated by visual testing: keeps sprites readable near the CAMERA_LAG-limited close range
   // without pinning everything at the max clamp (900 was tried first and always hit the ceiling).
-  const s = Math.max(0.02, Math.min(3, (scale / ROAD_WIDTH) * 3));
+  const s = Math.max(0.02, Math.min(2.2, (scale / ROAD_WIDTH) * 3));
   ctx.save();
   ctx.translate(sx, sy);
   ctx.scale(s, s);
