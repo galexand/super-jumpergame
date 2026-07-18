@@ -35,6 +35,7 @@
     touch-action: none;
   }
   .btn:active, .btn.pressed { background: rgba(255,255,255,0.55); }
+  .btn.hidden { display: none; }
   #btnUp   { bottom: calc(max(20px, env(safe-area-inset-bottom)) + 92px); }
   #btnDown { bottom: max(20px, env(safe-area-inset-bottom)); }
   #homeLink {
@@ -55,8 +56,8 @@
 <body>
 <canvas id="game"></canvas>
 <a id="homeLink" href="index.html">← Games</a>
-<div class="btn" id="btnUp">⬆</div>
-<div class="btn" id="btnDown">⬇</div>
+<div class="btn hidden" id="btnUp">⬆</div>
+<div class="btn hidden" id="btnDown">⬇</div>
 
 <script>
 'use strict';
@@ -115,20 +116,89 @@ const sfx = {
   lose()  { [392, 330, 262].forEach((f, i) => setTimeout(() => beep(f, 0.28, 'triangle', 0.07), i * 170)); },
 };
 
+// ============ i18n ============
+// NOTE: draw functions pervasively use `t` for animation time, so the translation
+// helper is named `tr` (not `t`) to avoid clashing.
+let LANG = 'en';
+try { LANG = localStorage.getItem('ohanaLang') === 'ro' ? 'ro' : 'en'; } catch (e) {}
+const T = {
+  en: {
+    title: '🏎 OHANA KARTS 🏁',
+    selectPrompt: 'Who is racing today? Tap a driver!',
+    track: 'TRACK',
+    trackNames: ['BEACH', 'ISLAND', 'HOUSE', 'PLANET', 'SPACE'],
+    stitch: 'STITCH',
+    lilo: 'LILO',
+    bestPrefix: 'best: ',
+    noTime: 'no time yet',
+    hint: '⌨  1 = Stitch · 2 = Lilo · ↑ ↓ pick track · dodge Gantu, Hämsterviel & Reuben!',
+    go: 'GO!',
+    finish: 'FINISH',
+    goldenMedal: '🏅 GOLDEN MEDAL!',
+    firstPlace: '🏆 1st PLACE!',
+    secondPlace: '🥈 2nd place…',
+    time: 'Time',
+    newBest: '🎉 New best time!',
+    best: 'Best',
+    councilwomanHonor: 'The Grand Councilwoman honors you! 🌺',
+    ohanaPride: 'Ohana pride! 🌺',
+    rematch: 'So close — rematch?',
+    tapRace: 'Tap to race again',
+    medalEarned: '🏅 Golden Medal earned!',
+    tapSkip: 'Tap to skip',
+    place1: '🥇 1st',
+    place2: '🥈 2nd',
+    taunts: ['Later, cuz!', 'Catch me!', 'Ohana speed!', 'Too slow, cuz!'],
+    home: '← Games',
+  },
+  ro: {
+    title: '🏎 OHANA KARTS 🏁',
+    selectPrompt: 'Cine concurează astăzi? Atinge un pilot!',
+    track: 'TRASEU',
+    trackNames: ['PLAJĂ', 'INSULĂ', 'CASĂ', 'PLANETĂ', 'SPAȚIU'],
+    stitch: 'STITCH',
+    lilo: 'LILO',
+    bestPrefix: 'record: ',
+    noTime: 'niciun timp încă',
+    hint: '⌨  1 = Stitch · 2 = Lilo · ↑ ↓ alege traseul · evită-i pe Gantu, Hämsterviel și Reuben!',
+    go: 'START!',
+    finish: 'SOSIRE',
+    goldenMedal: '🏅 MEDALIE DE AUR!',
+    firstPlace: '🏆 LOCUL 1!',
+    secondPlace: '🥈 Locul 2…',
+    time: 'Timp',
+    newBest: '🎉 Record nou!',
+    best: 'Record',
+    councilwomanHonor: 'Marea Consilieră te onorează! 🌺',
+    ohanaPride: 'Mândrie de ohana! 🌺',
+    rematch: 'Așa aproape — o revanșă?',
+    tapRace: 'Atinge pentru cursă nouă',
+    medalEarned: '🏅 Medalie de aur câștigată!',
+    tapSkip: 'Atinge pentru a sări',
+    place1: '🥇 loc 1',
+    place2: '🥈 loc 2',
+    taunts: ['Pa, verișoare!', 'Prinde-mă!', 'Viteză de ohana!', 'Prea încet, cuz!'],
+    home: '← Jocuri',
+  },
+};
+function tr(key) { return T[LANG][key]; }
+document.getElementById('homeLink').textContent = tr('home');
+
 // ============ GAME STATE ============
 const LENS = [13000, 13000, 17000, 21000, 25000]; // race distances for tracks 1-5
-const TRACK_NAMES = ['BEACH', 'ISLAND', 'HOUSE', 'PLANET', 'SPACE'];
 let LEN = LENS[0];                // race distance (set per-race in startRace)
 const MAXSPD = 7, RIVALBASE = 6.15;
 const state = { mode: 'select', sel: 0, char: 'S', level: 1, countT: 0, raceT: 0, place: 1, bestMsg: '', endT: 0, medalWon: false };
-const player = { x: 0, lane: 1, laneF: 1, speed: 0, hearts: 3, invuln: 0, stun: 0, sleepT: 0, finT: 0, boostT: 0 };
-const rival  = { x: 0, lane: 0, laneF: 0, speed: 0, weaveT: 120, finT: 0 };
-let hazards = [], pads = [], bolts = [], sandwiches = [], parts = [];
-let camX = 0, endRoll = 0;
+const player = { x: 0, lane: 1, laneF: 1, speed: 0, hearts: 3, invuln: 0, stun: 0, sleepT: 0, finT: 0, boostT: 0, tauntT: 0, tauntMsg: '', shakeT: 0, dmgFlashHeart: -1, dmgFlashT: 0 };
+const rival  = { x: 0, lane: 0, laneF: 0, speed: 0, weaveT: 120, finT: 0, tauntT: 0, tauntMsg: '' };
+let hazards = [], pads = [], bolts = [], sandwiches = [], heartPickups = [], parts = [];
+let camX = 0, endRoll = 0, lastPassOrder = 0, comebackHeartUsed = false;
 
 function bestKey(c, lvl) { return 'ohanaKartsBest' + c + 'L' + lvl; }
 function getBest(c, lvl) {
-  const v = parseFloat(localStorage.getItem(bestKey(c, lvl)));
+  let raw = null;
+  try { raw = localStorage.getItem(bestKey(c, lvl)); } catch (e) {}
+  const v = parseFloat(raw);
   return isNaN(v) ? null : v;
 }
 
@@ -141,9 +211,11 @@ function startRace(c) {
   LEN = LENS[state.level - 1];
   player.x = 260; player.lane = 1; player.laneF = 1; player.speed = 0;
   player.hearts = 3; player.invuln = 0; player.stun = 0; player.sleepT = 0; player.finT = 0; player.boostT = 0;
+  player.tauntT = 0; player.tauntMsg = ''; player.shakeT = 0; player.dmgFlashHeart = -1; player.dmgFlashT = 0;
   rival.x = 260; rival.lane = 0; rival.laneF = 0; rival.speed = 0; rival.weaveT = 150; rival.finT = 0;
-  hazards = []; pads = []; bolts = []; sandwiches = []; parts = [];
-  camX = 0; endRoll = 0;
+  rival.tauntT = 0; rival.tauntMsg = '';
+  hazards = []; pads = []; bolts = []; sandwiches = []; heartPickups = []; parts = [];
+  camX = 0; endRoll = 0; lastPassOrder = 0; comebackHeartUsed = false;
   state.medalWon = false;
   // build the track: Gantu, Hämsterviel, Reuben and boost pads take turns
   let x = 1000, i = 0, gCount = 0;
@@ -174,8 +246,11 @@ function setLane(l) {
 
 function damageKart() {
   if (player.invuln > 0 || player.stun > 0) return;
+  player.dmgFlashHeart = player.hearts - 1; // index of the heart being lost
+  player.dmgFlashT = 40;
   player.hearts--;
   player.invuln = 100;
+  player.shakeT = 20;
   player.speed = Math.min(player.speed, 2);
   sfx.crash();
   burst(player.x, laneY(player.laneF) - 20 * K, '#ff8a5c', 12);
@@ -231,6 +306,16 @@ function bindButton(id, dir) {
 bindButton('btnUp', -1);
 bindButton('btnDown', 1);
 
+const btnUpEl = document.getElementById('btnUp'), btnDownEl = document.getElementById('btnDown');
+let lastBtnMode = null;
+function syncTouchButtons() {
+  if (state.mode === lastBtnMode) return;
+  lastBtnMode = state.mode;
+  const show = state.mode === 'race' || state.mode === 'count';
+  btnUpEl.classList.toggle('hidden', !show);
+  btnDownEl.classList.toggle('hidden', !show);
+}
+
 function tapAt(x, y) {
   initAudio();
   if (state.mode === 'select') {
@@ -251,7 +336,7 @@ function tapAt(x, y) {
 }
 canvas.addEventListener('touchstart', e => {
   e.preventDefault();
-  const t = e.touches[0];
+  const t = e.changedTouches[0];
   tapAt(t.clientX, t.clientY);
 }, { passive: false });
 canvas.addEventListener('mousedown', e => tapAt(e.clientX, e.clientY));
@@ -278,6 +363,7 @@ window.addEventListener('keydown', e => {
 
 // ============ UPDATE ============
 function update() {
+  syncTouchButtons();
   // particles run in every mode
   for (let i = parts.length - 1; i >= 0; i--) {
     const p = parts[i];
@@ -318,6 +404,9 @@ function update() {
   }
   if (player.boostT > 0) player.boostT--;
   if (player.invuln > 0) player.invuln--;
+  if (player.shakeT > 0) player.shakeT--;
+  if (player.dmgFlashT > 0) player.dmgFlashT--; else player.dmgFlashHeart = -1;
+  if (player.tauntT > 0) player.tauntT--;
   player.x += player.speed;
   player.laneF += (player.lane - player.laneF) * 0.18;
 
@@ -326,7 +415,43 @@ function update() {
   rival.speed += (target - rival.speed) * 0.05;
   rival.x += rival.speed;
   rival.laneF += (rival.lane - rival.laneF) * 0.1;
-  if (--rival.weaveT <= 0) { rival.lane = 1 - rival.lane; rival.weaveT = 150 + Math.random() * 200; }
+  if (--rival.weaveT <= 0) {
+    // prefer whichever lane has no hazard within the next ~600 units ahead of the rival;
+    // if the rival's current lane is the one with the upcoming hazard, switch early
+    const laneHasHazard = l => hazards.some(hz => hz.lane === l && hz.x - rival.x > 0 && hz.x - rival.x < 600);
+    const otherLane = 1 - rival.lane;
+    if (laneHasHazard(rival.lane) && !laneHasHazard(otherLane)) rival.lane = otherLane;
+    else rival.lane = 1 - rival.lane;
+    rival.weaveT = 150 + Math.random() * 200;
+  }
+  if (rival.tauntT > 0) rival.tauntT--;
+
+  // --- taunt bubbles: whoever just took the lead gets a sweet callout ---
+  const passOrder = player.x > rival.x ? 1 : (player.x < rival.x ? -1 : lastPassOrder);
+  if (lastPassOrder !== 0 && passOrder !== 0 && passOrder !== lastPassOrder && !player.finT && !rival.finT) {
+    const taunts = tr('taunts');
+    const msg = taunts[Math.floor(Math.random() * taunts.length)];
+    if (passOrder === 1) { player.tauntMsg = msg; player.tauntT = 90; }
+    else { rival.tauntMsg = msg; rival.tauntT = 90; }
+  }
+  lastPassOrder = passOrder;
+
+  // --- comeback heart: trailing by a lot with almost no hearts left gets one shot at relief ---
+  if (!comebackHeartUsed && player.hearts <= 1 && rival.x - player.x > 1500 && !player.finT) {
+    comebackHeartUsed = true;
+    heartPickups.push({ x: player.x + 400 + Math.random() * 200, lane: player.lane, taken: false });
+  }
+  for (let i = heartPickups.length - 1; i >= 0; i--) {
+    const hp = heartPickups[i];
+    if (Math.abs(player.laneF - hp.lane) < 0.4 && Math.abs(hp.x - player.x) < 40 * K && player.stun <= 0) {
+      heartPickups.splice(i, 1);
+      player.hearts = Math.min(3, player.hearts + 1);
+      sfx.fix();
+      burst(player.x, laneY(hp.lane) - 15 * K, '#ff4d6d', 10);
+    } else if (hp.x < player.x - 400) {
+      heartPickups.splice(i, 1);
+    }
+  }
 
   // --- hazards ---
   for (const hz of hazards) {
@@ -378,7 +503,7 @@ function update() {
         if (--hz.cd <= 0) {
           hz.cd = 150;
           hz.arm = 12;
-          sandwiches.push({ x: player.x + 300, lane: player.lane, t: -28, life: 430 });
+          sandwiches.push({ x: player.x + Math.max(300, player.speed * 45), lane: player.lane, t: -28, life: 430 });
           sfx.splat();
         }
       }
@@ -436,11 +561,13 @@ function update() {
       state.place = rival.finT && rival.finT < player.finT ? 2 : 1;
       const secs = player.finT / 60;
       const best = getBest(state.char, state.level);
-      if (best === null || secs < best) {
+      if (state.place === 1 && (best === null || secs < best)) {
         try { localStorage.setItem(bestKey(state.char, state.level), secs.toFixed(2)); } catch (e) {}
-        state.bestMsg = '🎉 New best time!';
+        state.bestMsg = tr('newBest');
+      } else if (best !== null) {
+        state.bestMsg = tr('best') + ': ' + best.toFixed(1) + 's';
       } else {
-        state.bestMsg = 'Best: ' + best.toFixed(1) + 's';
+        state.bestMsg = '';
       }
       if (state.level === 5 && state.place === 1) {
         state.mode = 'ending';
@@ -476,6 +603,14 @@ function draw() {
 
   // boost pads
   for (const p of pads) drawPad(p.x - camX, laneY(p.lane), p.cd > 0, t);
+  // comeback heart pickup
+  for (const hp of heartPickups) {
+    const sx = hp.x - camX;
+    if (sx < -40 || sx > W + 40) continue;
+    const bob = Math.sin(t / 220) * 5 * K;
+    ctx.fillStyle = '#ff4d6d';
+    drawHeart(sx, laneY(hp.lane) - 6 * K + bob, 11 * K);
+  }
   // sandwiches
   for (const s of sandwiches) {
     const sx = s.x - camX;
@@ -536,8 +671,21 @@ function draw() {
     ctx.globalAlpha = 1;
   }
 
+  drawSpeedLines(t);
   drawHUD(t);
   drawOverlays(t);
+}
+
+// screen-space white streaks at the left/right edges while the player is boosting
+function drawSpeedLines(t) {
+  if (state.mode !== 'race' || player.boostT <= 0) return;
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  for (let i = 0; i < 6; i++) {
+    const y = (i * 97 + (t / 3) % 97) % H;
+    const len = 40 * K + (i % 3) * 20 * K;
+    ctx.fillRect(0, y, len, 2.4 * K);
+    ctx.fillRect(W - len, H - y, len, 2.4 * K);
+  }
 }
 
 // ============ TRACK SCENERY ============
@@ -1088,7 +1236,7 @@ function drawFinish(sx, t) {
   ctx.font = 'bold ' + 12 * K + 'px -apple-system, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('FINISH', sx + 12, rt - 67 * K);
+  ctx.fillText(tr('finish'), sx + 12, rt - 67 * K);
 }
 
 function drawPad(sx, ly, used, t) {
@@ -1814,6 +1962,12 @@ function drawKart(k, who, isP, t) {
   const y = laneY(k.laneF);
   const bob = Math.sin(k.x / 42) * 1.6 * K;
   if (isP && k.invuln > 0 && Math.floor(k.invuln / 4) % 2) return; // blink
+  // tilt: lean into lane changes, proportional to how far laneF still has to catch up to lane
+  const tilt = Math.max(-0.08, Math.min(0.08, (k.lane - k.laneF) * 0.08));
+  ctx.save();
+  ctx.translate(sx, y);
+  ctx.rotate(tilt);
+  ctx.translate(-sx, -y);
   // shadow
   ctx.fillStyle = 'rgba(0,0,0,0.16)';
   ctx.beginPath();
@@ -1852,6 +2006,9 @@ function drawKart(k, who, isP, t) {
   // driver
   if (who === 'S') drawStitchDriver(sx - 4 * K, y - 26 * K + bob);
   else drawLiloDriver(sx - 4 * K, y - 26 * K + bob);
+  ctx.restore(); // end tilt transform — icons/bubbles below stay upright
+  // taunt speech bubble when this kart just took the lead
+  if (k.tauntT > 0) drawTauntBubble(sx, y - 68 * K, k.tauntMsg);
   // repair stop
   if (isP && k.stun > 0) {
     ctx.font = 'bold ' + 20 * K + 'px -apple-system, sans-serif';
@@ -1871,6 +2028,30 @@ function drawKart(k, who, isP, t) {
     ctx.textBaseline = 'middle';
     ctx.fillText('💤', sx, y - 58 * K + Math.sin(t / 160) * 4);
   }
+}
+
+function drawTauntBubble(sx, by, msg) {
+  ctx.font = 'bold ' + 12 * K + 'px -apple-system, sans-serif';
+  const padX = 8 * K, padY = 5 * K;
+  const w = ctx.measureText(msg).width + padX * 2, h = 16 * K + padY;
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(sx - w / 2, by - h, w, h, 8 * K) : ctx.rect(sx - w / 2, by - h, w, h);
+  ctx.fill();
+  ctx.stroke();
+  // little pointer tail
+  ctx.beginPath();
+  ctx.moveTo(sx - 5 * K, by);
+  ctx.lineTo(sx, by + 6 * K);
+  ctx.lineTo(sx + 5 * K, by);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#2b2013';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(msg, sx, by - h / 2);
 }
 
 function drawStitchDriver(x, y) {
@@ -1989,10 +2170,16 @@ function drawHeart(x, y, s) {
 function drawHUD(t) {
   if (state.mode === 'select') return;
   const pad = Math.max(14, H * 0.02);
-  // hearts
+  // hearts — shake briefly on damage, and the just-lost heart flashes red before greying out
+  const shake = player.shakeT > 0 ? (Math.random() - 0.5) * 4 : 0;
   for (let i = 0; i < 3; i++) {
-    ctx.fillStyle = i < player.hearts ? '#ff4d6d' : 'rgba(0,0,0,0.25)';
-    drawHeart(pad + 14 + i * 32, pad + 6, 12);
+    const flashing = i === player.dmgFlashHeart && player.dmgFlashT > 0;
+    if (flashing) {
+      ctx.fillStyle = Math.floor(player.dmgFlashT / 5) % 2 ? '#ff4d6d' : 'rgba(0,0,0,0.25)';
+    } else {
+      ctx.fillStyle = i < player.hearts ? '#ff4d6d' : 'rgba(0,0,0,0.25)';
+    }
+    drawHeart(pad + 14 + i * 32 + shake, pad + 6 + shake, 12);
   }
   // time + place
   ctx.font = 'bold 20px -apple-system, sans-serif';
@@ -2003,7 +2190,7 @@ function drawHUD(t) {
   ctx.lineWidth = 4;
   const secs = (state.raceT / 60).toFixed(1) + 's';
   const ahead = player.finT ? state.place === 1 : player.x >= rival.x;
-  const label = (ahead ? '🥇 1st' : '🥈 2nd') + '   ' + secs;
+  const label = (ahead ? tr('place1') : tr('place2')) + '   ' + secs;
   ctx.strokeText(label, W - pad, pad);
   ctx.fillText(label, W - pad, pad);
   // progress bar
@@ -2035,15 +2222,15 @@ function drawOverlays(t) {
     const big = Math.min(52, W * 0.085);
     ctx.font = 'bold ' + big + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#ffd700';
-    ctx.fillText('🏎 OHANA KARTS 🏁', W / 2, H * 0.13);
+    ctx.fillText(tr('title'), W / 2, H * 0.13);
     ctx.font = 'bold ' + Math.min(22, W * 0.04) + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#fff';
-    ctx.fillText('Who is racing today? Tap a driver!', W / 2, H * 0.21);
+    ctx.fillText(tr('selectPrompt'), W / 2, H * 0.21);
     // track-length picker
     const pillRects = trackPillRects();
     ctx.font = 'bold ' + Math.min(14, W * 0.028) + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#dce9f5';
-    ctx.fillText('TRACK', W / 2, pillRects[0].y - 12);
+    ctx.fillText(tr('track'), W / 2, pillRects[0].y - 12);
     for (const r of pillRects) {
       ctx.fillStyle = state.level === r.level ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.18)';
       ctx.beginPath();
@@ -2054,7 +2241,7 @@ function drawOverlays(t) {
       ctx.fillText(String(r.level), r.x + r.w / 2, r.y + r.h / 2 - 5);
       ctx.font = 'bold ' + Math.min(9, W * 0.02) + 'px -apple-system, sans-serif';
       ctx.fillStyle = '#dce9f5';
-      ctx.fillText(TRACK_NAMES[r.level - 1], r.x + r.w / 2, r.y + r.h / 2 + 10);
+      ctx.fillText(tr('trackNames')[r.level - 1], r.x + r.w / 2, r.y + r.h / 2 + 10);
     }
     // two picks
     for (const [i, who] of [[0, 'S'], [1, 'L']]) {
@@ -2065,7 +2252,6 @@ function drawOverlays(t) {
       ctx.roundRect ? ctx.roundRect(cx - rw / 2, cy - rh / 2, rw, rh, 18) : ctx.rect(cx - rw / 2, cy - rh / 2, rw, rh);
       ctx.fill();
       const fake = { x: camX + cx, laneF: 0, invuln: 0, stun: 0, boostT: 0 };
-      const saveLaneY = laneY;
       // draw a preview kart at the card position
       ctx.save();
       ctx.translate(0, cy + 20 - laneY(0));
@@ -2073,37 +2259,45 @@ function drawOverlays(t) {
       ctx.restore();
       ctx.font = 'bold ' + Math.min(24, W * 0.045) + 'px -apple-system, sans-serif';
       ctx.fillStyle = '#fff';
-      ctx.fillText(who === 'S' ? 'STITCH' : 'LILO', cx, cy + rh / 2 - 40);
+      ctx.fillText(who === 'S' ? tr('stitch') : tr('lilo'), cx, cy + rh / 2 - 40);
       const best = getBest(who, state.level);
       ctx.font = '14px -apple-system, sans-serif';
       ctx.fillStyle = '#ffe066';
-      ctx.fillText(best ? 'best: ' + best.toFixed(1) + 's' : 'no time yet', cx, cy + rh / 2 - 18);
+      ctx.fillText(best ? tr('bestPrefix') + best.toFixed(1) + 's' : tr('noTime'), cx, cy + rh / 2 - 18);
     }
     ctx.font = '14px -apple-system, sans-serif';
     ctx.fillStyle = '#dce9f5';
-    ctx.fillText('⌨  1 = Stitch · 2 = Lilo · ↑ ↓ pick track · dodge Gantu, Hämsterviel & Reuben!', W / 2, H * 0.88);
+    ctx.fillText(tr('hint'), W / 2, H * 0.88);
   } else if (state.mode === 'count') {
     const n = 3 - Math.floor(state.countT / 60);
-    ctx.font = 'bold ' + Math.min(110, W * 0.2) + 'px -apple-system, sans-serif';
+    // scale-pop: each number/GO pops in large then settles to normal size
+    const cycleT = state.countT % 60;
+    const pop = cycleT < 12 ? 1.3 - (cycleT / 12) * 0.3 : 1;
+    const baseSize = Math.min(110, W * 0.2);
+    ctx.save();
+    ctx.translate(W / 2, H * 0.4);
+    ctx.scale(pop, pop);
+    ctx.font = 'bold ' + baseSize + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#fff';
     ctx.strokeStyle = 'rgba(0,0,0,0.4)';
     ctx.lineWidth = 8;
-    ctx.strokeText(n > 0 ? String(n) : 'GO!', W / 2, H * 0.4);
-    ctx.fillText(n > 0 ? String(n) : 'GO!', W / 2, H * 0.4);
+    ctx.strokeText(n > 0 ? String(n) : tr('go'), 0, 0);
+    ctx.fillText(n > 0 ? String(n) : tr('go'), 0, 0);
+    ctx.restore();
   } else if (state.mode === 'finish') {
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.fillRect(0, 0, W, H);
     const big = Math.min(56, W * 0.09);
     ctx.font = 'bold ' + big + 'px -apple-system, sans-serif';
     ctx.fillStyle = state.place === 1 ? '#ffd700' : '#dce9f5';
-    ctx.fillText(state.medalWon ? '🏅 GOLDEN MEDAL!' : (state.place === 1 ? '🏆 1st PLACE!' : '🥈 2nd place…'), W / 2, H * 0.34);
+    ctx.fillText(state.medalWon ? tr('goldenMedal') : (state.place === 1 ? tr('firstPlace') : tr('secondPlace')), W / 2, H * 0.34);
     ctx.font = 'bold ' + Math.min(26, W * 0.05) + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#fff';
-    ctx.fillText('Time: ' + (player.finT / 60).toFixed(1) + 's    ' + state.bestMsg, W / 2, H * 0.48);
-    ctx.fillText(state.medalWon ? 'The Grand Councilwoman honors you! 🌺' : (state.place === 1 ? 'Ohana pride! 🌺' : 'So close — rematch?'), W / 2, H * 0.58);
+    ctx.fillText(tr('time') + ': ' + (player.finT / 60).toFixed(1) + 's    ' + state.bestMsg, W / 2, H * 0.48);
+    ctx.fillText(state.medalWon ? tr('councilwomanHonor') : (state.place === 1 ? tr('ohanaPride') : tr('rematch')), W / 2, H * 0.58);
     ctx.font = '17px -apple-system, sans-serif';
     ctx.fillStyle = '#ffe066';
-    ctx.fillText('Tap to race again', W / 2, H * 0.7);
+    ctx.fillText(tr('tapRace'), W / 2, H * 0.7);
   } else if (state.mode === 'ending') {
     drawEndingCeremony(t);
   }
@@ -2205,8 +2399,8 @@ function drawEndingCeremony(t) {
     ctx.lineWidth = 4;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.strokeText('🏅 Golden Medal earned!', W / 2, H * 0.72);
-    ctx.fillText('🏅 Golden Medal earned!', W / 2, H * 0.72);
+    ctx.strokeText(tr('medalEarned'), W / 2, H * 0.72);
+    ctx.fillText(tr('medalEarned'), W / 2, H * 0.72);
     ctx.globalAlpha = 1;
   }
 
@@ -2215,7 +2409,7 @@ function drawEndingCeremony(t) {
   ctx.fillStyle = '#ffe066';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('Tap to skip', W / 2, H * 0.93);
+  ctx.fillText(tr('tapSkip'), W / 2, H * 0.93);
 }
 
 function drawGrandCouncilwoman(x, gy, t) {

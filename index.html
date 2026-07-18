@@ -77,14 +77,44 @@
     font-size: 13px;
     font-style: italic;
   }
+  .langToggle {
+    position: fixed;
+    top: max(14px, env(safe-area-inset-top));
+    right: 14px;
+    display: flex;
+    background: rgba(255,255,255,0.9);
+    border-radius: 999px;
+    padding: 4px;
+    box-shadow: 0 4px 12px rgba(20,60,90,0.22);
+    z-index: 10;
+  }
+  .langToggle button {
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    font-weight: 800;
+    font-size: 14px;
+    padding: 7px 12px;
+    border-radius: 999px;
+    color: #55708a;
+    cursor: pointer;
+  }
+  .langToggle button.active {
+    background: #2ecc71;
+    color: #fff;
+  }
 </style>
 </head>
 <body>
+<div class="langToggle" id="langToggle">
+  <button type="button" data-lang="en">🇬🇧 EN</button>
+  <button type="button" data-lang="ro">🇷🇴 RO</button>
+</div>
 <div class="wrap">
   <h1>🌺 Ohana Arcade</h1>
-  <div class="sub">Pick a game and play — on iPad, iPhone or computer!</div>
+  <div class="sub" id="sub"></div>
   <div id="games"></div>
-  <footer>Ohana means family — family means nobody gets left behind.</footer>
+  <footer id="footer"></footer>
 </div>
 <script>
 'use strict';
@@ -95,44 +125,100 @@ const GAMES = [
     href: 'super-jumper.html',
     icon: '🌺',
     desc: '12-world platform adventure: Stitch (and Lilo!), friends with powers, experiment villains and a golden medal.',
+    descRo: 'Aventură de platforme cu 12 lumi: Stitch (și Lilo!), prieteni cu puteri speciale, experimente răufăcătoare și o medalie de aur.',
   },
   {
     title: 'Ohana Karts',
     href: 'ohana-karts.html',
     icon: '🏎️',
     desc: 'Race Lilo or Stitch along the Hawaiian beach — dodge Gantu, Hämsterviel and Reuben to reach the finish line first!',
+    descRo: 'Cursă cu Lilo sau Stitch pe plaja din Hawaii — ferește-te de Gantu, Hämsterviel și Reuben ca să ajungi primul la linia de sosire!',
   },
   {
     title: 'Whack Hämsterviel',
     href: 'whack-hamsterviel.html',
     icon: '🔨',
     desc: 'Bonk Hämsterviel on the head as he pops out of his burrows — but do not hit Stitch, Lilo or Angel! Beat the clock.',
+    descRo: 'Pocnește-l pe Hämsterviel în cap când iese din vizuină — dar ai grijă să nu-i lovești pe Stitch, Lilo sau Angel! Bate ceasul.',
   },
   {
     title: 'SpaceShip Racers',
     href: 'spaceship-racers.html',
     icon: '🚀',
     desc: '5-level pseudo-3D space race: pilot Lilo or Stitch through curves, dodge villains, grab laser guns, and outrun Leroy!',
+    descRo: 'Cursă spațială pseudo-3D cu 5 niveluri: pilotează-i pe Lilo sau Stitch prin curbe, ferește-te de răufăcători, prinde pistoale laser și fugi de Leroy!',
   },
   {
     title: 'Ohana Sumo',
     href: 'ohana-sumo.html',
     icon: '🤼',
     desc: 'Stitch takes on Experiment 625 in a beach sumo ring — push each other out using all four arms. Best of 3 wins!',
+    descRo: 'Stitch se luptă cu Experimentul 625 într-un ring de sumo pe plajă — împingeți-vă afară folosind toate cele patru brațe. Câștigă cine reușește primul 2 din 3!',
   },
 ];
 
+const TEXT = {
+  en: {
+    sub: 'Pick a game and play — on iPad, iPhone or computer!',
+    play: 'PLAY',
+    footer: 'Ohana means family — family means nobody gets left behind.',
+  },
+  ro: {
+    sub: 'Alege un joc și joacă-te — pe iPad, iPhone sau computer!',
+    play: 'JOACĂ',
+    footer: 'Ohana înseamnă familie — și familia înseamnă că nimeni nu rămâne în urmă.',
+  },
+};
+
+function getLang() {
+  try {
+    return localStorage.getItem('ohanaLang') === 'ro' ? 'ro' : 'en';
+  } catch (e) {
+    return 'en';
+  }
+}
+
+function setLang(lang) {
+  try {
+    localStorage.setItem('ohanaLang', lang);
+  } catch (e) { /* ignore */ }
+}
+
 const box = document.getElementById('games');
-GAMES.sort((a, b) => a.title.localeCompare(b.title)).forEach(g => {
-  const a = document.createElement('a');
-  a.className = 'card';
-  a.href = g.href;
-  a.innerHTML = '<div class="icon"></div><div><h2></h2><p></p></div><div class="play">PLAY</div>';
-  a.querySelector('.icon').textContent = g.icon;
-  a.querySelector('h2').textContent = g.title;
-  a.querySelector('p').textContent = g.desc;
-  box.appendChild(a);
+const subEl = document.getElementById('sub');
+const footerEl = document.getElementById('footer');
+const sortedGames = GAMES.slice().sort((a, b) => a.title.localeCompare(b.title));
+
+function render(lang) {
+  const t = TEXT[lang];
+  subEl.textContent = t.sub;
+  footerEl.textContent = t.footer;
+  box.innerHTML = '';
+  sortedGames.forEach(g => {
+    const a = document.createElement('a');
+    a.className = 'card';
+    a.href = g.href;
+    a.innerHTML = '<div class="icon"></div><div><h2></h2><p></p></div><div class="play"></div>';
+    a.querySelector('.icon').textContent = g.icon;
+    a.querySelector('h2').textContent = g.title;
+    a.querySelector('p').textContent = lang === 'ro' ? g.descRo : g.desc;
+    a.querySelector('.play').textContent = t.play;
+    box.appendChild(a);
+  });
+  document.querySelectorAll('#langToggle button').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.lang === lang);
+  });
+}
+
+document.getElementById('langToggle').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-lang]');
+  if (!btn) return;
+  const lang = btn.dataset.lang;
+  setLang(lang);
+  render(lang);
 });
+
+render(getLang());
 </script>
 </body>
 </html>

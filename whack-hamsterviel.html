@@ -43,6 +43,47 @@
 <script>
 'use strict';
 
+// ============ I18N ============
+let LANG = 'en';
+try { LANG = localStorage.getItem('ohanaLang') === 'ro' ? 'ro' : 'en'; } catch (e) {}
+const T = {
+  en: {
+    titleLine1: 'WHACK',
+    titleLine2: 'HÄMSTERVIEL! 🔨',
+    howTo: 'Whack him with the hammer when he pops out of his burrow!',
+    dontHit: 'But do NOT hit his friends: Stitch, Lilo or Angel! 💙',
+    tapToStart: 'Tap the screen to start!',
+    record: '🏆 Best: ',
+    timeUp: "Time's up!",
+    scoreLabel: 'Score: ',
+    newRecord: '🎉 New record!',
+    tapAgain: 'Tap to play again',
+    ohanaCheer: '🌺 Ohana means nobody got hurt! +50',
+    goldenLabel: 'GOLDEN!',
+    freezeLabel: 'FREEZE!',
+    ouch: 'OUCH -5',
+    combo: 'COMBO x',
+  },
+  ro: {
+    titleLine1: 'BATE-L PE',
+    titleLine2: 'HÄMSTERVIEL! 🔨',
+    howTo: 'Pocnește-l cu ciocanul când iese din vizuină!',
+    dontHit: 'Dar NU lovi prietenii: Stitch, Lilo sau Angel! 💙',
+    tapToStart: 'Atinge ecranul ca să începi!',
+    record: '🏆 Record: ',
+    timeUp: 'Timpul a expirat!',
+    scoreLabel: 'Scor: ',
+    newRecord: '🎉 Record nou!',
+    tapAgain: 'Atinge ca să joci din nou',
+    ohanaCheer: '🌺 Ohana înseamnă că nimeni nu a pățit nimic! +50',
+    goldenLabel: 'AURIU!',
+    freezeLabel: 'ÎNGHEȚ!',
+    ouch: 'AU -5',
+    combo: 'COMBO x',
+  },
+};
+function tr(key) { return T[LANG][key]; }
+
 // ============ SETUP ============
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -88,18 +129,22 @@ const sfx = {
   tick()  { beep(760, 0.05, 'square', 0.04); },
   go()    { beep(880, 0.35, 'square', 0.09); },
   over()  { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.2, 'square', 0.07), i * 130)); },
+  golden() { [660, 880, 1320].forEach((f, i) => setTimeout(() => beep(f, 0.14, 'triangle', 0.07), i * 60)); },
+  freeze() { beep(1400, 0.25, 'sine', 0.05, -600); },
+  streak() { [784, 988, 1175].forEach((f, i) => setTimeout(() => beep(f, 0.16, 'triangle', 0.08), i * 70)); },
 };
 
 // ============ STATE ============
 const GAME_TIME = 45; // seconds
 const RISE = 0.85;    // how far a critter lifts out of its burrow (× hole radius)
 function critterY(h) { return h.cy - h.occ.up * h.r * RISE; }
-const state = { mode: 'title', score: 0, best: 0, timeLeft: GAME_TIME, t: 0, combo: 0, comboT: 0 };
+const state = { mode: 'title', score: 0, best: 0, timeLeft: GAME_TIME, t: 0, combo: 0, comboT: 0,
+  freezeT: 0, friendsHit: 0, overInputLockT: 0, newBest: false, ohanaBonus: false };
 let holes = [];       // {cx, cy, r}
 let pops = [];        // bonk stars / effects
 let hand = null;      // { x, y, t, hit } Hammerface hammer-head slam
 
-state.best = parseInt(localStorage.getItem('whackHamBest') || '0', 10) || 0;
+try { state.best = parseInt(localStorage.getItem('whackHamBest') || '0', 10) || 0; } catch (e) { state.best = 0; }
 
 function layoutHoles() {
   holes = [];
@@ -127,11 +172,30 @@ function startGame() {
   state.t = 0;
   state.combo = 0;
   state.comboT = 0;
+  state.freezeT = 0;
+  state.friendsHit = 0;
+  state.newBest = false;
+  state.ohanaBonus = false;
   pops = [];
   hand = null;
   holes.forEach(h => h.occ = null);
   state.spawnT = 30;
   sfx.go();
+}
+
+function endGame() {
+  state.mode = 'over';
+  state.overInputLockT = 60; // ~1s lockout to prevent accidental instant restart
+  if (state.friendsHit === 0) {
+    state.score += 50;
+    state.ohanaBonus = true;
+  }
+  if (state.score > state.best) {
+    state.best = state.score;
+    try { localStorage.setItem('whackHamBest', String(state.best)); } catch (e) {}
+    state.newBest = true;
+  } else state.newBest = false;
+  sfx.over();
 }
 
 // difficulty ramps up as time runs down
@@ -144,13 +208,21 @@ function spawnCritter() {
   if (!empty.length) return;
   const h = empty[Math.floor(Math.random() * empty.length)];
   const d = difficulty();
-  // most are Hämsterviel; some are friends you must NOT hit (more later on)
+  // most are Hämsterviel; some are friends you must NOT hit (more later on);
+  // rarely a freeze flower pops up too
   const friendChance = 0.16 + d * 0.16;
+  const flowerChance = 0.07;
   let type = 'H';
-  if (Math.random() < friendChance) {
+  const roll = Math.random();
+  if (roll < flowerChance) {
+    type = 'F';
+  } else if (roll < flowerChance + friendChance) {
     type = ['S', 'L', 'A'][Math.floor(Math.random() * 3)];
+  } else if (Math.random() < 0.10) {
+    type = 'G'; // golden Hämsterviel — rare, worth triple, up less long
   }
-  const upTime = 95 - d * 45 + Math.random() * 25; // frames fully up
+  let upTime = 95 - d * 45 + Math.random() * 25; // frames fully up
+  if (type === 'G') upTime *= 0.6;
   h.occ = { type, up: 0, state: 'rising', life: upTime, wob: Math.random() * 6 };
 }
 
@@ -158,29 +230,48 @@ function spawnCritter() {
 function whackAt(px, py) {
   let hitSomething = false;
   for (const h of holes) {
-    if (!h.occ || h.occ.state === 'bonked') continue;
+    if (!h.occ || h.occ.state === 'bonked' || h.occ.state === 'falling') continue;
     if (h.occ.up < 0.35) continue;
     const dx = px - h.cx, dy = py - critterY(h);
     if (dx * dx + dy * dy < (h.r * 1.15) * (h.r * 1.15)) {
       hitSomething = true;
-      if (h.occ.type === 'H') {
+      if (h.occ.type === 'H' || h.occ.type === 'G') {
         // bonk!
         state.combo++;
         state.comboT = 60;
-        const pts = 10 + Math.min(20, (state.combo - 1) * 2);
+        const golden = h.occ.type === 'G';
+        let pts = 10 + Math.min(20, (state.combo - 1) * 2);
+        if (golden) pts *= 3;
         state.score += pts;
         h.occ.state = 'bonked';
         h.occ.life = 18;
         sfx.bonk();
-        addPop(h.cx, critterY(h), '+' + pts, '#ffe066', 'star');
+        addPop(h.cx, critterY(h), '+' + pts, golden ? '#ffd700' : '#ffe066', 'star');
+        if (golden) addPop(h.cx, critterY(h) - 26, tr('goldenLabel'), '#ffd700', 'text');
+        // streak rewards at combo 5 and 10
+        if (state.combo === 5 || state.combo === 10) {
+          const bonus = state.combo === 5 ? 25 : 60;
+          state.score += bonus;
+          sfx.streak();
+          addSparkle();
+          addPop(h.cx, critterY(h) - 50, '+' + bonus, '#7fe8a0', 'text');
+        }
+      } else if (h.occ.type === 'F') {
+        // freeze flower — pauses the countdown briefly, no penalty
+        state.freezeT = 180; // 3 seconds at 60fps
+        h.occ.state = 'bonked';
+        h.occ.life = 18;
+        sfx.freeze();
+        addPop(h.cx, critterY(h), tr('freezeLabel'), '#8fe3ff', 'text');
       } else {
         // hit a friend — oops!
         state.score = Math.max(0, state.score - 5);
         state.timeLeft = Math.max(0, state.timeLeft - 2);
         state.combo = 0;
+        state.friendsHit++;
         h.occ.state = 'falling';
         sfx.ouch();
-        addPop(h.cx, critterY(h), 'OUCH -5', '#ff6b6b', 'text');
+        addPop(h.cx, critterY(h), tr('ouch'), '#ff6b6b', 'text');
       }
       break; // one whack, one target
     }
@@ -189,16 +280,30 @@ function whackAt(px, py) {
   hand = { x: px, y: py, t: 0, hit: hitSomething };
 }
 
+function addSparkle() {
+  pops.push({ x: W / 2, y: H / 2, text: '', color: '#fff', kind: 'sparkle', t: 0, life: 40,
+    sparks: Array.from({ length: 18 }, () => ({
+      x: Math.random() * W, y: Math.random() * H,
+      a: Math.random() * Math.PI * 2,
+    })) });
+}
+
 function addPop(x, y, text, color, kind) {
-  pops.push({ x, y, text, color, kind, t: 0, life: kind === 'star' ? 30 : 44,
+  pops.push({ x, y, text, color, kind, t: 0, life: kind === 'star' ? 30 : (kind === 'dirt' ? 20 : 44),
     stars: kind === 'star' ? Array.from({ length: 6 }, () => ({
       a: Math.random() * Math.PI * 2, v: 2 + Math.random() * 3,
+    })) : null,
+    dirt: kind === 'dirt' ? Array.from({ length: 7 }, () => ({
+      a: Math.random() * Math.PI * 2, v: 1.5 + Math.random() * 2.5,
     })) : null });
 }
 
 function tapAt(px, py) {
   initAudio();
-  if (state.mode === 'title' || state.mode === 'over') {
+  if (state.mode === 'title') {
+    startGame();
+  } else if (state.mode === 'over') {
+    if (state.overInputLockT > 0) return; // brief lockout to avoid accidental instant restart
     startGame();
   } else if (state.mode === 'play') {
     whackAt(px, py);
@@ -206,11 +311,15 @@ function tapAt(px, py) {
 }
 canvas.addEventListener('touchstart', e => {
   e.preventDefault();
-  for (const t of e.changedTouches) tapAt(t.clientX, t.clientY);
+  if (e.changedTouches.length) tapAt(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
 }, { passive: false });
 canvas.addEventListener('mousedown', e => tapAt(e.clientX, e.clientY));
 window.addEventListener('keydown', e => {
-  if (e.code === 'Space' || e.code === 'Enter') { initAudio(); if (state.mode !== 'play') startGame(); e.preventDefault(); }
+  if (e.code === 'Space' || e.code === 'Enter') {
+    initAudio();
+    if (state.mode === 'title' || (state.mode === 'over' && state.overInputLockT <= 0)) startGame();
+    e.preventDefault();
+  }
 });
 
 // ============ UPDATE ============
@@ -225,21 +334,24 @@ function update() {
   }
   if (hand) { hand.t++; if (hand.t > 16) hand = null; }
 
+  if (state.mode === 'over') {
+    if (state.overInputLockT > 0) state.overInputLockT--;
+    return;
+  }
   if (state.mode !== 'play') return;
 
-  // countdown
-  if (state.t % 60 === 0 && state.timeLeft > 0) {
+  // countdown — paused while a freeze flower effect is active
+  if (state.freezeT > 0) {
+    state.freezeT--;
+  } else if (state.t % 60 === 0 && state.timeLeft > 0) {
     state.timeLeft--;
     if (state.timeLeft <= 5 && state.timeLeft > 0) sfx.tick();
-    if (state.timeLeft === 0) {
-      state.mode = 'over';
-      if (state.score > state.best) {
-        state.best = state.score;
-        try { localStorage.setItem('whackHamBest', String(state.best)); } catch (e) {}
-        state.newBest = true;
-      } else state.newBest = false;
-      sfx.over();
-    }
+  }
+  // game over fires the moment timeLeft hits 0, however it got there
+  // (per-second countdown OR a friend-hit penalty dropping it straight to 0)
+  if (state.timeLeft <= 0) {
+    endGame();
+    return;
   }
   if (state.comboT > 0) state.comboT--; else state.combo = 0;
 
@@ -257,7 +369,10 @@ function update() {
     if (!o) continue;
     if (o.state === 'rising') {
       o.up += 0.14;
-      if (o.up >= 1) { o.up = 1; o.state = 'up'; sfx.pop(); }
+      if (o.up >= 1) {
+        o.up = 1; o.state = 'up'; sfx.pop();
+        addPop(h.cx, h.cy + h.r * 0.2, '', '#c9a45c', 'dirt');
+      }
     } else if (o.state === 'up') {
       o.life--;
       o.wob += 0.15;
@@ -337,10 +452,20 @@ function draw() {
       ctx.rect(h.cx - h.r * 1.6, 0, h.r * 3.2, h.cy + h.r * 0.2);
       ctx.clip();
       const wob = Math.sin(o.wob) * 3 * (o.state === 'up' ? 1 : 0);
-      if (o.type === 'H') drawHamster(h.cx + wob, cy, h.r, o.state === 'bonked');
-      else if (o.type === 'S') drawStitch(h.cx + wob, cy, h.r);
-      else if (o.type === 'L') drawLilo(h.cx + wob, cy, h.r);
-      else drawAngel(h.cx + wob, cy, h.r);
+      const wave = o.state === 'up' ? Math.sin(o.wob * 0.8) : 0;
+      // squash-stretch on rise: wide & short at first, settling tall by the time it's fully up
+      const stretch = o.state === 'rising' ? (1 - o.up) : 0;
+      const sx = 1 + 0.28 * stretch, sy = 1 - 0.22 * stretch;
+      ctx.save();
+      ctx.translate(h.cx + wob, cy);
+      ctx.scale(sx, sy);
+      ctx.translate(-(h.cx + wob), -cy);
+      if (o.type === 'H' || o.type === 'G') drawHamster(h.cx + wob, cy, h.r, o.state === 'bonked', o.type === 'G');
+      else if (o.type === 'F') drawFlower(h.cx + wob, cy, h.r);
+      else if (o.type === 'S') drawStitch(h.cx + wob, cy, h.r, wave);
+      else if (o.type === 'L') drawLilo(h.cx + wob, cy, h.r, wave);
+      else drawAngel(h.cx + wob, cy, h.r, wave);
+      ctx.restore();
       ctx.restore();
     }
 
@@ -364,7 +489,27 @@ function draw() {
         const d = s.v * p.t;
         drawStar(p.x + Math.cos(s.a) * d, p.y + Math.sin(s.a) * d - p.t, 4 * a + 1);
       }
+    } else if (p.kind === 'dirt') {
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = a;
+      for (const d of p.dirt) {
+        const dist = d.v * p.t;
+        ctx.beginPath();
+        ctx.arc(p.x + Math.cos(d.a) * dist, p.y + Math.sin(d.a) * dist * 0.6 - p.t * 0.4, 2.4 * a + 1, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      continue;
+    } else if (p.kind === 'sparkle') {
+      ctx.fillStyle = '#fff';
+      ctx.globalAlpha = a;
+      for (const s of p.sparks) {
+        drawStar(s.x, s.y, (3 + Math.sin(p.t * 0.4 + s.a) * 2) * a);
+      }
+      ctx.globalAlpha = 1;
+      continue;
     }
+    if (!p.text) continue;
     ctx.globalAlpha = Math.min(1, a * 1.4);
     ctx.fillStyle = p.color;
     ctx.strokeStyle = 'rgba(0,0,0,0.4)';
@@ -565,9 +710,9 @@ function drawHammerface(x, y, t, hit) {
 }
 
 // ---- critters ----
-function drawHamster(cx, cy, r, bonked) {
+function drawHamster(cx, cy, r, bonked, golden) {
   const s = r / 34;
-  const FUR = '#f4f4f6', PINK = '#f3aec6';
+  const FUR = golden ? '#ffe066' : '#f4f4f6', PINK = golden ? '#ffb347' : '#f3aec6';
   // ears
   ctx.fillStyle = FUR;
   ctx.beginPath();
@@ -640,7 +785,56 @@ function drawHamster(cx, cy, r, bonked) {
   }
 }
 
-function drawStitch(cx, cy, r) {
+// friends wave a paw/hand while up, so kids read "don't hit" faster
+function drawWaveHand(cx, cy, r, wave, color) {
+  const s = r / 34;
+  ctx.save();
+  ctx.translate(cx + 20 * s, cy - 30 * s);
+  ctx.rotate(0.5 + wave * 0.5);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 4 * s, 9 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawFlower(cx, cy, r) {
+  const s = r / 34;
+  // hibiscus-style freeze flower cue
+  ctx.fillStyle = '#3d9e4f';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + 16 * s, 6 * s, 20 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+  const petals = 5;
+  for (let i = 0; i < petals; i++) {
+    const a = (i / petals) * Math.PI * 2 - Math.PI / 2;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(a);
+    ctx.fillStyle = '#ff6f9c';
+    ctx.beginPath();
+    ctx.ellipse(0, -18 * s, 8 * s, 16 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.fillStyle = '#ffd54d';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 7 * s, 0, Math.PI * 2);
+  ctx.fill();
+  // sparkle/snowflake cue: this flower freezes the clock
+  ctx.strokeStyle = '#8fe3ff';
+  ctx.lineWidth = 2 * s;
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI;
+    ctx.beginPath();
+    ctx.moveTo(cx - 26 * s + Math.cos(a) * 6 * s, cy - 8 * s - 26 * s + Math.sin(a) * 6 * s);
+    ctx.lineTo(cx - 26 * s - Math.cos(a) * 6 * s, cy - 8 * s - 26 * s - Math.sin(a) * 6 * s);
+    ctx.stroke();
+  }
+}
+
+function drawStitch(cx, cy, r, wave) {
+  wave = wave || 0;
   const s = r / 34;
   const BLUE = '#3d7bc9', BELLY = '#bfe0f4', PINK = '#e88db4';
   for (const sg of [-1, 1]) {
@@ -684,9 +878,11 @@ function drawStitch(cx, cy, r) {
   ctx.beginPath();
   ctx.arc(cx, cy + 5 * s, 6 * s, 0.3, Math.PI - 0.3);
   ctx.stroke();
+  drawWaveHand(cx, cy, r, wave, BLUE);
 }
 
-function drawLilo(cx, cy, r) {
+function drawLilo(cx, cy, r, wave) {
+  wave = wave || 0;
   const s = r / 34;
   const SKIN = '#d9976a', HAIR = '#1c1b22';
   ctx.fillStyle = HAIR;
@@ -723,9 +919,11 @@ function drawLilo(cx, cy, r) {
   ctx.beginPath();
   ctx.arc(cx, cy + 6 * s, 5 * s, 0.3, Math.PI - 0.3);
   ctx.stroke();
+  drawWaveHand(cx, cy, r, wave, SKIN);
 }
 
-function drawAngel(cx, cy, r) {
+function drawAngel(cx, cy, r, wave) {
+  wave = wave || 0;
   const s = r / 34;
   const PINK = '#ef86b8', BELLY = '#fbd6e7';
   for (const sg of [-1, 1]) {
@@ -761,6 +959,7 @@ function drawAngel(cx, cy, r) {
   ctx.beginPath();
   ctx.arc(cx, cy + 5 * s, 5 * s, 0.3, Math.PI - 0.3);
   ctx.stroke();
+  drawWaveHand(cx, cy, r, wave, PINK);
 }
 
 function drawHeart(x, y, s) {
@@ -785,19 +984,41 @@ function drawHUD() {
   ctx.textAlign = 'left';
   ctx.strokeText('★ ' + state.score, pad, pad);
   ctx.fillText('★ ' + state.score, pad, pad);
-  // timer
+  // timer — turns red and pulses at 5s or less
   ctx.textAlign = 'right';
   const warn = state.timeLeft <= 5;
   ctx.fillStyle = warn ? '#ff5555' : '#fff';
-  ctx.strokeText('⏱ ' + state.timeLeft + 's', W - pad, pad);
-  ctx.fillText('⏱ ' + state.timeLeft + 's', W - pad, pad);
+  if (warn) {
+    const pulse = 1 + 0.14 * Math.abs(Math.sin(Date.now() / 150));
+    ctx.save();
+    ctx.translate(W - pad, pad);
+    ctx.scale(pulse, pulse);
+    ctx.strokeText('⏱ ' + state.timeLeft + 's', 0, 0);
+    ctx.fillText('⏱ ' + state.timeLeft + 's', 0, 0);
+    ctx.restore();
+  } else {
+    ctx.strokeText('⏱ ' + state.timeLeft + 's', W - pad, pad);
+    ctx.fillText('⏱ ' + state.timeLeft + 's', W - pad, pad);
+  }
   // combo (below the score, so it never overlaps the ← Games link)
   if (state.combo >= 2) {
     ctx.textAlign = 'left';
     ctx.fillStyle = '#ffe066';
     ctx.font = 'bold ' + Math.max(18, W * 0.036) + 'px -apple-system, sans-serif';
-    ctx.strokeText('COMBO x' + state.combo + '!', pad, pad + 30);
-    ctx.fillText('COMBO x' + state.combo + '!', pad, pad + 30);
+    ctx.strokeText(tr('combo') + state.combo + '!', pad, pad + 30);
+    ctx.fillText(tr('combo') + state.combo + '!', pad, pad + 30);
+    // combo meter bar (fills up toward the next 5-hit streak milestone)
+    const barW = Math.min(180, W * 0.4), barH = 8;
+    const barY = pad + 58, barX = pad;
+    const fillPct = Math.min(1, (state.combo % 5 === 0 ? 5 : state.combo % 5) / 5);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barW, barH, 4);
+    ctx.fill();
+    ctx.fillStyle = '#ffe066';
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barW * fillPct, barH, 4);
+    ctx.fill();
   }
 }
 
@@ -809,37 +1030,42 @@ function drawOverlays() {
     ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = '#ffd700';
     ctx.font = 'bold ' + Math.min(46, W * 0.082) + 'px -apple-system, sans-serif';
-    ctx.fillText('BATE-L PE', W / 2, H * 0.3);
-    ctx.fillText('HÄMSTERVIEL! 🔨', W / 2, H * 0.4);
+    ctx.fillText(tr('titleLine1'), W / 2, H * 0.3);
+    ctx.fillText(tr('titleLine2'), W / 2, H * 0.4);
     ctx.fillStyle = '#fff';
     ctx.font = 'bold ' + Math.min(22, W * 0.04) + 'px -apple-system, sans-serif';
-    ctx.fillText('Pocnește-l cu ciocanul când iese din vizuină!', W / 2, H * 0.54);
+    ctx.fillText(tr('howTo'), W / 2, H * 0.54);
     ctx.font = Math.min(18, W * 0.033) + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#dce9f5';
-    ctx.fillText('Dar NU lovi prietenii: Stitch, Lilo sau Angel! 💙', W / 2, H * 0.62);
+    ctx.fillText(tr('dontHit'), W / 2, H * 0.62);
     ctx.fillStyle = '#ffe066';
     ctx.font = 'bold ' + Math.min(24, W * 0.045) + 'px -apple-system, sans-serif';
-    ctx.fillText('Atinge ecranul ca să începi!', W / 2, H * 0.74);
+    ctx.fillText(tr('tapToStart'), W / 2, H * 0.74);
     if (state.best > 0) {
       ctx.fillStyle = '#fff';
       ctx.font = '17px -apple-system, sans-serif';
-      ctx.fillText('🏆 Record: ' + state.best, W / 2, H * 0.82);
+      ctx.fillText(tr('record') + state.best, W / 2, H * 0.82);
     }
   } else if (state.mode === 'over') {
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = '#ffd700';
     ctx.font = 'bold ' + Math.min(52, W * 0.09) + 'px -apple-system, sans-serif';
-    ctx.fillText('Timpul a expirat!', W / 2, H * 0.32);
+    ctx.fillText(tr('timeUp'), W / 2, H * 0.32);
     ctx.fillStyle = '#fff';
     ctx.font = 'bold ' + Math.min(30, W * 0.056) + 'px -apple-system, sans-serif';
-    ctx.fillText('Scor: ' + state.score, W / 2, H * 0.46);
+    ctx.fillText(tr('scoreLabel') + state.score, W / 2, H * 0.46);
     ctx.fillStyle = '#ffe066';
     ctx.font = 'bold ' + Math.min(24, W * 0.045) + 'px -apple-system, sans-serif';
-    ctx.fillText(state.newBest ? '🎉 Record nou!' : '🏆 Record: ' + state.best, W / 2, H * 0.56);
+    ctx.fillText(state.newBest ? tr('newRecord') : tr('record') + state.best, W / 2, H * 0.56);
+    if (state.ohanaBonus) {
+      ctx.fillStyle = '#7fe8a0';
+      ctx.font = 'bold ' + Math.min(20, W * 0.038) + 'px -apple-system, sans-serif';
+      ctx.fillText(tr('ohanaCheer'), W / 2, H * 0.65);
+    }
     ctx.fillStyle = '#fff';
     ctx.font = '18px -apple-system, sans-serif';
-    ctx.fillText('Atinge ca să joci din nou', W / 2, H * 0.68);
+    ctx.fillText(tr('tapAgain'), W / 2, H * 0.74);
   }
 }
 
