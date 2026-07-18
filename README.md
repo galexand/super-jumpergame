@@ -12,7 +12,8 @@ drop a new `.html` file in the folder and add one entry to the `GAMES` array in 
 
 | Game | File | What it is |
 |---|---|---|
-| **Ohana Karts** | `ohana-karts.html` | Beach kart race: play Lilo or Stitch, dodge the villains, beat your rival to the finish |
+| **Ohana Karts** | `ohana-karts.html` | Beach kart race across five selectable tracks: play Lilo or Stitch, dodge the villains, beat your rival to the finish |
+| **Ohana Sumo** | `ohana-sumo.html` | Beach sumo duel: Stitch vs Experiment 625, push your opponent out of the shrinking ring, best of 3 rounds |
 | **SpaceShip Racers** | `spaceship-racers.html` | 5-level pseudo-3D space racer: curves, laser guns, Leroy chases you |
 | **Super Jumper** | `super-jumper.html` | 12-world platform adventure with friends, experiments and a golden medal |
 | **Whack Hämsterviel** | `whack-hamsterviel.html` | Whack-a-mole: bonk Hämsterviel with your finger, spare the friends, beat the clock |
@@ -21,8 +22,21 @@ drop a new `.html` file in the folder and add one entry to the `GAMES` array in 
 
 # 🏎 Ohana Karts
 
-Pick **Lilo or Stitch** — the other becomes your rival — and race along a two-lane beach road in
-Hawaii. Auto-accelerate; your only job is **switching lanes** to dodge trouble:
+Pick **Lilo or Stitch** — the other becomes your rival — and race along a two-lane road. Auto-
+accelerate; your only job is **switching lanes** to dodge trouble.
+
+### Five tracks, one picker
+
+Before the race, pick from **five tracks** on the track-select screen: 🏖 **Beach**, 🏝 **Island**,
+🏠 **House**, 🪐 **Planet** and 🌌 **Space**. Each track **reskins the hazards and scenery** to fit
+its theme (e.g. Hämsterviel's roadblock and Reuben's sandwiches look and behave a little
+differently from track to track), and the rival's look changes too:
+
+- On most tracks your rival is **Mertle** (or Leroy, depending on the pair racing), taunting you
+  with a **speech-bubble** when she pulls ahead.
+- Finish **Track 5 (Space)** and a **medal ceremony** plays for the winner.
+
+### Hazards
 
 - 🦈 **Gantu** guards a lane and **fires plasma bolts** down the road (bolt or crash = kart damage).
 - 🐹 **Hämsterviel** putters along as a rolling roadblock — stuck behind him you crawl at his pace.
@@ -30,9 +44,31 @@ Hawaii. Auto-accelerate; your only job is **switching lanes** to dodge trouble:
   sticky slowdown.
 - ⚡ **Boost pads** give a burst of speed; the kart has **3 hearts**, and losing them all means a
   costly pit-repair stop while the race runs on.
+- 💗 **Comeback heart** — if you fall behind, a heart pickup appears to help you catch back up.
 
-Best time per character is saved on the device. Controls: **⬆⬇ buttons** (or tap the top/bottom
-half of the road), keyboard **↑ ↓** or `W`/`S`; on the picker `1` = Stitch, `2` = Lilo.
+### The rival
+
+The rival AI is **hazard-aware**: it dodges roadblocks and bolts too, so races stay close, and it
+**taunts** you with a speech bubble on the lead change.
+
+Best time is saved **per character, per track**, on the device. Controls: **⬆⬇ buttons** (or tap
+the top/bottom half of the road), keyboard **↑ ↓** or `W`/`S`; on the picker `1` = Stitch,
+`2` = Lilo.
+
+---
+
+# 🤼 Ohana Sumo
+
+**Stitch** takes on **Experiment 625 (Reuben)** in a beach sumo ring. Push each other out of the
+ring to win a round — best **2 out of 3** rounds takes the match.
+
+- Each round has a **45-second timer**; when it runs out the **ring starts shrinking**, forcing a
+  faster finish.
+- Hold the charge button to **wind up a dash** — the longer you hold, the harder the shove, but a
+  whiffed dash leaves you briefly staggered.
+- Controls: **on-screen joystick** (touch) or `WASD` / arrow keys to move; hold `Space` or
+  `Shift` (or double-tap-and-hold the joystick) to charge a dash. On the picker `1` = Stitch,
+  `2` = Reuben.
 
 ---
 
@@ -43,6 +79,12 @@ the head** to bonk him for points (chain hits for a combo bonus). But friends po
 **Stitch, Lilo or Angel** by mistake and you lose points *and* time. The game speeds up as the
 **45-second** clock runs down. Best score is saved on the device. Just tap — no other controls.
 
+- ✨ **Golden Hämsterviel** — a rare golden pop-up worth **3× points**.
+- ❄️ **Freeze flower** — bonk it to **pause the clock for 3 seconds**.
+- 🔥 **Combo streaks** — hit Hämsterviel 5 or 10 times in a row without missing for a bonus.
+- 👨‍👩‍👧 **Ohana bonus** — spare all the friends down to **zero misses** and earn an extra bonus at
+  the end.
+
 ---
 
 # 🚀 SpaceShip Racers
@@ -52,12 +94,17 @@ inspired by classic arcade racers. Steer left and right to follow the curves —
 you'll slow to a crawl.
 
 - **Level 1 – Beach Cruise**: gentle curves, dodge Hämsterviel and Reuben's sandwiches.
-- **Level 2 – Mountain Pass**: tighter turns, Gantu guards the road and shoots plasma bolts.
+- **Level 2 – Mountain Pass**: tighter turns, Gantu guards the road and shoots plasma bolts. Hills
+  add rolling elevation changes along the way.
 - **Level 3 – Space Launch**: neon road among the stars. **Laser gun** pickups let you shoot
-  obstacles, and **Leroy** appears in a red spaceship behind you, firing bolts you must dodge.
+  obstacles — and now **enemy bolts too** — and **Leroy** appears in a red spaceship behind you,
+  firing bolts you must dodge.
 - **Level 4 – Alien Planet**: crystal spires, two moons, sharper curves, Leroy fires faster.
-- **Level 5 – Final Championship**: nebula sky, golden road, everything at maximum difficulty.
-  Win 1st place to become **Champion!**
+- **Level 5 – Final Championship**: nebula sky, golden road, everything at maximum difficulty,
+  with **close, final-sprint finishes**. Win 1st place to become **Champion!**
+
+Leroy now **telegraphs** his shots before firing, and if you shoot down **2 of his bolts** he
+**retreats** for a moment before pressing the attack again.
 
 Beat each track in **1st place** to unlock the next. Best time per level per character is saved.
 
@@ -132,7 +179,10 @@ Stitch fires in the direction he is facing. Jumps have hidden kid-friendly forgi
 
 Difficulty ramps up steadily: wider gaps, more villains, and armed enemies in the later worlds.
 Levels also grow **longer**: +10% per level from World 4, +20% per level from World 7
-(World 12 is 2.5× its base length).
+(World 12 is 2.5× its base length). From **World 9 onward**, stretched levels add a **mid-level
+checkpoint** (a lit torch) — reach it once and a retry after a lost life respawns you there
+instead of the level start. A **world-intro banner** fades in at the start of every world to
+announce it.
 
 Finish World 12 and the **Grand Councilwoman's ship lands** for the grand finale: she steps out
 and awards Lilo & Stitch a **golden medal**. (Tap to skip the ceremony.)
@@ -143,6 +193,8 @@ and awards Lilo & Stitch a **golden medal**. (Tap to skip the ceremony.)
 - **Lilo herself is the playable character in World 12**, red leaf dress, flower and all.
 - 3 hearts (up to 5 with Nani), score, coins, and **Lilo & Stitch's house** waiting at the end
   of every world — reach it to finish the level.
+- **Coins turn into hearts**: every **100 coins** collected buys Stitch an extra heart, up to
+  his current max.
 
 ### Power-ups
 
@@ -176,8 +228,8 @@ and awards Lilo & Stitch a **golden medal**. (Tap to skip the ceremony.)
 - 🥪 **Reuben (X-625)** (Worlds 3–8) — the lazy golden clone who stands around and **throws
   sandwiches** at you. His sandwiches never hurt: they only shrink a big Stitch.
 - 😤 **Mertle Edmonds** (Worlds 2, 4, 11 and 12) — Lilo's rival: she plants her feet and
-  **screams**, and touching her puts you **to sleep for 10 seconds** (💤). She's just a kid, so
-  she can't be stomped or shot — go around her.
+  **screams**, and touching her puts you **to sleep for 5 seconds** (💤) — tapping fast wakes
+  Stitch up sooner. She's just a kid, so she can't be stomped or shot — go around her.
 - 💗 **From World 10, Gantu and Reuben turn good** — hearts overhead, no more shooting, and
   friendly Reuben's sandwich throws become **snacks that make you grow** (+100).
 - 🧪 **The experiments** (they shoot, except Babyfier):
@@ -185,7 +237,7 @@ and awards Lilo & Stitch a **golden medal**. (Tap to skip the ceremony.)
   - **Amnesio (303)** in World 7 — touch or bolt wipes Stitch's memory: **back to World 3!**
   - **Sample (258)** in World 8 — his beat curse **doubles your runs and jumps** for a while (🎵 in the HUD).
   - **Fibber (032)** in World 9 — the dangerous one: costs **two hearts** (Jumba's shield still saves you).
-  - All four join the final showdown in World 11.
+  - All four **experiments appear together** in the final showdown in World 11.
 
 ### High scores
 
@@ -196,13 +248,23 @@ and awards Lilo & Stitch a **golden medal**. (Tap to skip the ceremony.)
 
 ---
 
+## 🌍 Language
+
+The whole arcade is **bilingual, English and Romanian**. The **EN / RO switch** on the home page
+(`index.html`) sets the language for **every game** — it's saved on the device under the
+`ohanaLang` key in `localStorage`, so once you pick a language it sticks the next time you open
+any game, without having to choose again.
+
+---
+
 ## 📁 Project files
 
 | File | Purpose |
 |---|---|
-| `index.html` | The arcade home page — lists all games alphabetically (`GAMES` array). |
+| `index.html` | The arcade home page — lists all games alphabetically (`GAMES` array) and hosts the EN/RO language switch. |
 | `super-jumper.html` | The platformer — engine, levels, art, sound, UI. Edit levels in the `LEVELS` array (legend in the comments above it). |
-| `ohana-karts.html` | The beach kart racing game. |
+| `ohana-karts.html` | The beach kart racing game (five selectable tracks). |
+| `ohana-sumo.html` | The beach sumo duel game. |
 | `spaceship-racers.html` | The pseudo-3D spaceship racing game. |
 | `whack-hamsterviel.html` | The whack-a-mole game. |
 | `serve.py` | Dev server with no-cache headers on port 8642. |

@@ -93,6 +93,88 @@ window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 100));
 resize();
 
+// ============ I18N ============
+let LANG = 'en';
+try { LANG = localStorage.getItem('ohanaLang') === 'ro' ? 'ro' : 'en'; } catch (e) {}
+const T = {
+  en: {
+    title: '🚀 SPACESHIP RACERS 🛸',
+    pickDriver: 'Who is racing today? Tap a driver!',
+    stitch: 'STITCH', lilo: 'LILO',
+    tracksAwait: '5 tracks await!',
+    charHint: '⌨  1 = Stitch · 2 = Lilo · Enter to pick',
+    chooseTrack: ' — Choose a track',
+    back: '‹ Back',
+    lvlShort: 'Lvl ',
+    bestTime: (s) => 'best ' + s + 's',
+    noTime: 'no time yet',
+    levelHint: '🚀 Auto-accelerates — ◀ ▶ or A/D to steer, tap ✦ to fire lasers',
+    unlockHint: 'Beat a track in 1st place to unlock the next!',
+    go: 'GO!',
+    countHint: '◀ ▶ steer · ship flies itself',
+    finish: 'FINISH',
+    first: '🥇 1st', second: '🥈 2nd',
+    level: 'Level ',
+    ammo: 'Ammo ',
+    firstPlace: '🏆 1st PLACE!',
+    secondPlace: '🥈 2nd place…',
+    time: 'Time: ',
+    tapReturn: 'Tap to return to Level Select',
+    champion: '🏆 CHAMPION! 🏆',
+    conquered: (name) => 'You conquered all 5 tracks, ' + name + '!',
+    newBest: '🎉 New best time!',
+    bestLabel: 'Best: ',
+    nextUnlocked: '🔓 Next track unlocked!',
+    soClose: 'So close! Get 1st to unlock the next track!',
+    leroyRetreat: '😱 Leroy retreats!',
+    levelNames: ['Beach Cruise', 'Mountain Pass', 'Space Launch', 'Alien Planet', 'Final Championship'],
+    driverName: { S: 'Stitch', L: 'Lilo' },
+    pageTitle: 'SpaceShip Racers',
+    homeLink: '← Games',
+  },
+  ro: {
+    title: '🚀 CURSE SPAȚIALE 🛸',
+    pickDriver: 'Cine face cursa azi? Atinge un pilot!',
+    stitch: 'STITCH', lilo: 'LILO',
+    tracksAwait: '5 trasee te așteaptă!',
+    charHint: '⌨  1 = Stitch · 2 = Lilo · Enter alege',
+    chooseTrack: ' — Alege un traseu',
+    back: '‹ Înapoi',
+    lvlShort: 'Nv ',
+    bestTime: (s) => 'cel mai bun ' + s + 's',
+    noTime: 'niciun timp încă',
+    levelHint: '🚀 Accelerează singur — ◀ ▶ sau A/D pentru viraj, atinge ✦ pentru laser',
+    unlockHint: 'Termină pe locul 1 ca să deblochezi următorul traseu!',
+    go: 'START!',
+    countHint: '◀ ▶ virează · naveta zboară singură',
+    finish: 'SOSIRE',
+    first: '🥇 loc 1', second: '🥈 loc 2',
+    level: 'Nivel ',
+    ammo: 'Muniție ',
+    firstPlace: '🏆 LOCUL 1!',
+    secondPlace: '🥈 locul 2…',
+    time: 'Timp: ',
+    tapReturn: 'Atinge ecranul pentru meniu',
+    champion: '🏆 CAMPION! 🏆',
+    conquered: (name) => 'Ai cucerit toate cele 5 trasee, ' + name + '!',
+    newBest: '🎉 Record nou!',
+    bestLabel: 'Cel mai bun: ',
+    nextUnlocked: '🔓 Traseul următor s-a deblocat!',
+    soClose: 'Aproape! Termină pe locul 1 ca să deblochezi următorul traseu!',
+    leroyRetreat: '😱 Leroy se retrage!',
+    levelNames: ['Plimbare pe Plajă', 'Trecătoarea Muntelui', 'Lansare Spațială', 'Planeta Alienilor', 'Marele Campionat'],
+    driverName: { S: 'Stitch', L: 'Lilo' },
+    pageTitle: 'Curse Spațiale',
+    homeLink: '← Jocuri',
+  },
+};
+function tr(key) { return T[LANG][key]; }
+document.title = tr('pageTitle');
+document.addEventListener('DOMContentLoaded', () => {
+  const home = document.getElementById('homeLink');
+  if (home) home.textContent = tr('homeLink');
+});
+
 // ============ SOUND ============
 let audioCtx = null;
 function initAudio() {
@@ -125,6 +207,8 @@ const sfx = {
   gun()   { beep(760, 0.14, 'square', 0.06, 260); },
   laser() { beep(600, 0.12, 'square', 0.07, 700); },
   leroyShoot() { beep(220, 0.18, 'sawtooth', 0.09, -260); },
+  leroyWarn() { beep(900, 0.09, 'square', 0.05); },
+  leroyRetreat() { [660, 500, 380].forEach((f, i) => setTimeout(() => beep(f, 0.2, 'sawtooth', 0.07, -80), i * 110)); },
   win()   { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.22, 'square', 0.08), i * 140)); },
   lose()  { [392, 330, 262].forEach((f, i) => setTimeout(() => beep(f, 0.28, 'triangle', 0.07), i * 170)); },
   champion() { [523, 659, 784, 1047, 1319].forEach((f, i) => setTimeout(() => beep(f, 0.26, 'square', 0.09), i * 130)); },
@@ -159,6 +243,10 @@ function buildTrack(cfg) {
     addRoad(segs, p[0], p[1], p[2], p[3]);
     i++;
   }
+  const amp = cfg.hillAmp || 0;
+  if (amp > 0) {
+    for (const s of segs) s.y = Math.sin(s.index / 42) * amp;
+  }
   return segs;
 }
 
@@ -186,8 +274,8 @@ function polygon(x1, y1, x2, y2, x3, y3, x4, y4, color) {
 // ============ LEVELS ============
 const LEVELS = [
   { // 1: Beach
-    name: 'Beach Cruise', theme: 'beach', vehicle: 'ship',
-    targetSegments: 420, speedMax: 98, speedAccel: 2.3, offRoadMax: 30,
+    name: tr('levelNames')[0], theme: 'beach', vehicle: 'ship',
+    targetSegments: 420, speedMax: 98, speedAccel: 2.3, offRoadMax: 30, hillAmp: 0,
     palette: [
       [22, 34, 22, CURVE.NONE], [24, 40, 24, CURVE.EASY], [24, 40, 24, -CURVE.EASY],
       [18, 60, 18, CURVE.NONE], [26, 34, 26, CURVE.MED], [26, 34, 26, -CURVE.MED],
@@ -197,8 +285,8 @@ const LEVELS = [
     leroy: null,
   },
   { // 2: Mountain
-    name: 'Mountain Pass', theme: 'mountain', vehicle: 'ship',
-    targetSegments: 560, speedMax: 106, speedAccel: 2.4, offRoadMax: 26,
+    name: tr('levelNames')[1], theme: 'mountain', vehicle: 'ship',
+    targetSegments: 560, speedMax: 106, speedAccel: 2.4, offRoadMax: 26, hillAmp: 260,
     palette: [
       [18, 26, 18, CURVE.MED], [18, 26, 18, -CURVE.MED], [14, 40, 14, CURVE.NONE],
       [20, 24, 20, CURVE.HARD], [20, 24, 20, -CURVE.HARD], [22, 30, 22, CURVE.EASY],
@@ -208,8 +296,8 @@ const LEVELS = [
     leroy: null,
   },
   { // 3: Space launch
-    name: 'Space Launch', theme: 'space', vehicle: 'ship',
-    targetSegments: 640, speedMax: 116, speedAccel: 2.6, offRoadMax: 34,
+    name: tr('levelNames')[2], theme: 'space', vehicle: 'ship',
+    targetSegments: 640, speedMax: 116, speedAccel: 2.6, offRoadMax: 34, hillAmp: 60,
     palette: [
       [16, 26, 16, CURVE.MED], [16, 26, 16, -CURVE.MED], [14, 34, 14, CURVE.NONE],
       [18, 22, 18, CURVE.HARD], [18, 22, 18, -CURVE.HARD],
@@ -219,8 +307,8 @@ const LEVELS = [
     leroy: { fireInterval: 240 },
   },
   { // 4: Alien planet
-    name: 'Alien Planet', theme: 'alien', vehicle: 'ship',
-    targetSegments: 740, speedMax: 124, speedAccel: 2.7, offRoadMax: 34,
+    name: tr('levelNames')[3], theme: 'alien', vehicle: 'ship',
+    targetSegments: 740, speedMax: 124, speedAccel: 2.7, offRoadMax: 34, hillAmp: 320,
     palette: [
       [14, 20, 14, CURVE.HARD], [14, 20, 14, -CURVE.HARD], [12, 30, 12, CURVE.NONE],
       [16, 20, 16, CURVE.XHARD], [16, 20, 16, -CURVE.XHARD], [16, 24, 16, CURVE.MED],
@@ -230,8 +318,8 @@ const LEVELS = [
     leroy: { fireInterval: 180 },
   },
   { // 5: Championship
-    name: 'Final Championship', theme: 'champ', vehicle: 'ship',
-    targetSegments: 880, speedMax: 132, speedAccel: 2.9, offRoadMax: 36,
+    name: tr('levelNames')[4], theme: 'champ', vehicle: 'ship',
+    targetSegments: 880, speedMax: 132, speedAccel: 2.9, offRoadMax: 36, hillAmp: 140,
     palette: [
       [12, 18, 12, CURVE.XHARD], [12, 18, 12, -CURVE.XHARD], [12, 26, 12, CURVE.NONE],
       [14, 18, 14, CURVE.HARD], [14, 18, 14, -CURVE.HARD], [16, 20, 16, CURVE.MED], [16, 20, 16, -CURVE.MED],
@@ -254,23 +342,28 @@ const THEMES = {
 const CAMERA_LAG = 3; // extra segments the camera trails behind exact player z
 const state = { mode: 'char', char: 'S', sel: 0, levelIdx: 0, countT: 0, raceT: 0, place: 1, bestMsg: '', unlockMsg: '' };
 const player = { z: 0, x: 0, speed: 0, hearts: 3, invuln: 0, stun: 0, finZ: 0, boostT: 0, ammo: 0, steerLean: 0 };
-const rival  = { z: 0, x: 0.35, speed: 0, weaveT: 150, finZ: 0 };
-const leroy  = { active: false, dist: 700, x: -0.3, weaveT: 90, fireT: 200, hp: 0 };
+const rival  = { z: 0, x: 0.35, targetX: 0.35, speed: 0, weaveT: 150, finZ: 0 };
+const leroy  = { active: false, dist: 700, x: -0.3, weaveT: 90, fireT: 200, hp: 0, shotDown: 0, retreatT: 0 };
+let toastMsg = '', toastT = 0;
 let segments = [], trackLen = 0, level = LEVELS[0], theme = THEMES.beach;
 let hazards = [], pads = [], pickups = [], bolts = [], leroyBolts = [], sandwiches = [], parts = [];
 let heldLeft = false, heldRight = false, tapSteer = 0;
 
 function bestKey(lvl, c) { return 'spaceRacersBestL' + lvl + c; }
 function getBest(lvl, c) {
-  const v = parseFloat(localStorage.getItem(bestKey(lvl, c)));
-  return isNaN(v) ? null : v;
+  try {
+    const v = parseFloat(localStorage.getItem(bestKey(lvl, c)));
+    return isNaN(v) ? null : v;
+  } catch (e) { return null; }
 }
 function setBest(lvl, c, secs) {
   try { localStorage.setItem(bestKey(lvl, c), secs.toFixed(2)); } catch (e) {}
 }
 function getUnlocked() {
-  const v = parseInt(localStorage.getItem('spaceRacersUnlocked'), 10);
-  return isNaN(v) ? 1 : Math.max(1, Math.min(LEVELS.length, v));
+  try {
+    const v = parseInt(localStorage.getItem('spaceRacersUnlocked'), 10);
+    return isNaN(v) ? 1 : Math.max(1, Math.min(LEVELS.length, v));
+  } catch (e) { return 1; }
 }
 function setUnlocked(n) {
   try { localStorage.setItem('spaceRacersUnlocked', String(n)); } catch (e) {}
@@ -307,17 +400,19 @@ function startRace(levelIdx) {
   player.z = 0; player.x = -0.3; player.speed = 0;
   player.hearts = 3; player.invuln = 0; player.stun = 0; player.finZ = 0; player.boostT = 0;
   player.ammo = 0; player.steerLean = 0;
-  rival.z = 0; rival.x = 0.35; rival.speed = 0; rival.weaveT = 150; rival.finZ = 0;
+  rival.z = 0; rival.x = 0.35; rival.targetX = 0.35; rival.speed = 0; rival.weaveT = 150; rival.finZ = 0;
   leroy.active = !!level.leroy; leroy.dist = 700; leroy.x = -0.3; leroy.weaveT = 90;
   leroy.fireT = level.leroy ? level.leroy.fireInterval : 999999; leroy.hp = 0;
+  leroy.shotDown = 0; leroy.retreatT = 0;
   bolts = []; leroyBolts = []; sandwiches = []; parts = [];
+  toastMsg = ''; toastT = 0;
   spawnHazards(level);
   updateShootButton();
 }
 
 function updateShootButton() {
   const el = document.getElementById('btnShoot');
-  if (player.ammo > 0 && state.mode === 'race') el.classList.add('on');
+  if (player.ammo > 0 && state.mode === 'race' && player.stun <= 0) el.classList.add('on');
   else el.classList.remove('on');
 }
 
@@ -329,7 +424,8 @@ function setSteer(dir) {
 function fireLaser() {
   if (state.mode !== 'race' || player.ammo <= 0 || player.stun > 0) return;
   player.ammo--;
-  bolts.push({ z: player.z + 60, laneX: player.x, vz: 22, friendly: true });
+  // bolts must outrun the player (who is still accelerating downtrack) or they can never catch a hazard
+  bolts.push({ z: player.z + 60, laneX: player.x, vz: player.speed + 26, friendly: true });
   sfx.laser();
   updateShootButton();
 }
@@ -340,10 +436,11 @@ function damagePlayer() {
   player.invuln = 100;
   player.speed = Math.min(player.speed, 24);
   sfx.crash();
-  burst(0, H * 0.72, '#ff8a5c', 12);
+  burst(W / 2, H * 0.72, '#ff8a5c', 12);
   if (player.hearts <= 0) {
     player.stun = 190;
     player.speed = 0;
+    updateShootButton();
   }
 }
 
@@ -357,6 +454,15 @@ function burst(sx, sy, color, n) {
       color,
     });
   }
+}
+
+// approximate current screen x for a world position, used so particle bursts
+// during update() land near the actual impact point instead of screen-left
+function screenXForWorld(worldX, worldZ) {
+  const camZ = player.z - CAMERA_LAG * SEGMENT_LENGTH;
+  const camX = player.x * ROAD_WIDTH;
+  const p = project(worldX, 0, worldZ, camX, CAMERA_HEIGHT, camZ);
+  return p ? p.x : W / 2;
 }
 
 // ============ INPUT ============
@@ -375,20 +481,25 @@ bindHold('btnLeft', () => { heldLeft = true; }, () => { heldLeft = false; });
 bindHold('btnRight', () => { heldRight = true; }, () => { heldRight = false; });
 bindHold('btnShoot', () => { fireLaser(); }, null);
 
+// centralizes entry into level-select so the cached best-times/unlocked
+// data (used by drawLevelSelect) is always invalidated on entry
+let lsCache = null;
+function enterLevelSelect() { state.mode = 'level'; lsCache = null; }
+
 function tapAt(x, y) {
   initAudio();
   if (state.mode === 'char') {
     state.char = x < W / 2 ? 'S' : 'L';
     state.sel = state.char === 'S' ? 0 : 1;
-    state.mode = 'level';
+    enterLevelSelect();
   } else if (state.mode === 'level') {
     handleLevelTap(x, y);
   } else if (state.mode === 'race') {
     setSteer(x < W / 2 ? -1 : 1);
   } else if (state.mode === 'finish') {
-    state.mode = 'level';
+    enterLevelSelect();
   } else if (state.mode === 'victory') {
-    state.mode = 'level';
+    enterLevelSelect();
   }
 }
 function handleLevelTap(x, y) {
@@ -420,9 +531,9 @@ window.addEventListener('keydown', e => {
   initAudio();
   if (state.mode === 'char') {
     if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') { state.sel = 1 - state.sel; sfx.tick(); }
-    if (e.code === 'Digit1') { state.char = 'S'; state.mode = 'level'; }
-    if (e.code === 'Digit2') { state.char = 'L'; state.mode = 'level'; }
-    if (e.code === 'Enter' || e.code === 'Space') { state.char = state.sel === 0 ? 'S' : 'L'; state.mode = 'level'; }
+    if (e.code === 'Digit1') { state.char = 'S'; enterLevelSelect(); }
+    if (e.code === 'Digit2') { state.char = 'L'; enterLevelSelect(); }
+    if (e.code === 'Enter' || e.code === 'Space') { state.char = state.sel === 0 ? 'S' : 'L'; enterLevelSelect(); }
   } else if (state.mode === 'level') {
     if (e.code === 'Enter' || e.code === 'Space') {
       const unlocked = getUnlocked();
@@ -436,7 +547,7 @@ window.addEventListener('keydown', e => {
     if (e.code === 'ArrowRight' || e.code === 'KeyD') heldRight = true;
     if (e.code === 'KeyF' || e.code === 'KeyX') fireLaser();
   } else if (state.mode === 'finish' || state.mode === 'victory') {
-    if (e.code === 'Enter' || e.code === 'Space') state.mode = 'level';
+    if (e.code === 'Enter' || e.code === 'Space') enterLevelSelect();
   }
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
 });
@@ -467,12 +578,14 @@ function update() {
   if (state.mode !== 'race') return;
 
   state.raceT++;
-  tapSteer = 0;
+
+  if (toastT > 0) toastT--;
 
   const seg = currentSegment(player.z);
 
   // --- player steering ---
   const steerDir = (heldLeft ? -1 : 0) + (heldRight ? 1 : 0) + tapSteer;
+  tapSteer = 0; // consume the one-frame tap impulse *after* it's been read into steerDir
   if (player.stun <= 0) {
     player.x += steerDir * 0.018;
     player.x -= seg.curve * (player.speed / level.speedMax) * 0.00032; // centrifugal drift
@@ -485,7 +598,7 @@ function update() {
     player.stun--;
     player.speed = 0;
     if (player.stun % 30 === 0) sfx.fix();
-    if (player.stun === 0) { player.hearts = 3; player.invuln = 120; }
+    if (player.stun === 0) { player.hearts = 3; player.invuln = 120; updateShootButton(); }
   } else {
     const cap = player.boostT > 0 ? level.speedMax * 1.45 : (offRoad ? level.offRoadMax : level.speedMax);
     if (player.speed < cap) player.speed = Math.min(cap, player.speed + level.speedAccel);
@@ -497,18 +610,30 @@ function update() {
   if (player.z > trackLen) player.z = trackLen;
 
   // --- rival AI (rubber-banded) ---
-  const targetSpeed = level.speedMax * 0.94 + Math.max(-10, Math.min(10, (player.z - rival.z) / 220));
+  let targetSpeed = level.speedMax * 0.94 + Math.max(-10, Math.min(10, (player.z - rival.z) / 220));
+  if (player.z > trackLen * 0.85) targetSpeed *= 0.97; // final sprint: let close finishes happen more often
   rival.speed += (targetSpeed - rival.speed) * 0.04;
   rival.z += Math.max(0, rival.speed);
   if (rival.z > trackLen) rival.z = trackLen;
-  if (--rival.weaveT <= 0) { rival.x = rival.x > 0 ? -0.35 - Math.random() * 0.3 : 0.35 + Math.random() * 0.3; rival.weaveT = 140 + Math.random() * 180; }
+  if (--rival.weaveT <= 0) { rival.targetX = rival.targetX > 0 ? -0.35 - Math.random() * 0.3 : 0.35 + Math.random() * 0.3; rival.weaveT = 140 + Math.random() * 180; }
+  rival.x += (rival.targetX - rival.x) * 0.06; // smoothly steer instead of teleporting lanes
 
-  // --- Leroy (levels 3-5): chases behind, weaves, fires ---
+  // --- Leroy (levels 3-5): chases behind, weaves, fires, can be driven off ---
+  if (level.leroy && leroy.retreatT > 0 && !player.finZ) {
+    leroy.retreatT--;
+    if (leroy.retreatT <= 0) {
+      leroy.active = true;
+      leroy.dist = 700;
+      leroy.fireT = level.leroy.fireInterval;
+    }
+  }
   if (leroy.active && !player.finZ) {
     leroy.dist += (player.speed - level.speedMax * 0.9) * 0.4;
     leroy.dist = Math.max(260, Math.min(900, leroy.dist));
     if (--leroy.weaveT <= 0) { leroy.x = -leroy.x + (Math.random() - 0.5) * 0.3; leroy.weaveT = 70 + Math.random() * 60; }
-    if (--leroy.fireT <= 0) {
+    leroy.fireT--;
+    if (leroy.fireT === 30) sfx.leroyWarn(); // ~0.5s telegraph before he fires
+    if (leroy.fireT <= 0) {
       leroy.fireT = level.leroy.fireInterval;
       leroyBolts.push({ t: 0, laneX: leroy.x, life: 55 });
       sfx.leroyShoot();
@@ -534,11 +659,17 @@ function update() {
       if (Math.abs(player.x - hz.laneX) < 0.4 && player.stun <= 0) {
         const gap = hz.z - player.z;
         if (gap > 0 && gap < 260) {
-          player.z = hz.z - 260;
-          if (player.speed > hz.sp * 20) {
-            player.speed = hz.sp * 18;
-            if (hz.cool <= 0) { sfx.thud(); hz.cool = 40; burst(0, H * 0.7, '#f4f4f6', 5); }
+          if (!hz._hit) {
+            // first contact: one thud + push-back so it still feels like an impact
+            hz._hit = true;
+            player.z = Math.min(player.z, hz.z - 260);
+            sfx.thud();
+            burst(screenXForWorld(hz.laneX * ROAD_WIDTH, hz.z), H * 0.7, '#f4f4f6', 5);
           }
+          // after that, crawl along behind it instead of hard-clamping every frame,
+          // so the world still visibly moves rather than feeling like a wall
+          player.speed = Math.min(player.speed, 30);
+          player.z = Math.min(player.z, hz.z - 40);
         }
       }
     } else if (hz.type === 'G') {
@@ -562,7 +693,9 @@ function update() {
         if (--hz.cd <= 0) {
           hz.cd = 160;
           hz.arm = 12;
-          sandwiches.push({ z: player.z + 1400, laneX: hz.laneX, t: -28, life: 500 });
+          // spawn distance scales with player speed so it arms just before
+          // the player arrives instead of finishing arming while still far off
+          sandwiches.push({ z: player.z + player.speed * 34, laneX: hz.laneX, t: -28, life: 500 });
           sfx.splat();
         }
       }
@@ -580,7 +713,7 @@ function update() {
         if (hz._dead) continue;
         if (Math.abs(hz.z - b.z) < 130 && Math.abs(hz.laneX - b.laneX) < 0.45) {
           hz._dead = true; hit = true;
-          burst(0, H * 0.5, '#8dffb0', 8);
+          burst(screenXForWorld(hz.laneX * ROAD_WIDTH, hz.z), H * 0.5, '#8dffb0', 8);
           sfx.thud();
           break;
         }
@@ -589,7 +722,43 @@ function update() {
         if (s._dead) continue;
         if (Math.abs(s.z - b.z) < 100 && Math.abs(s.laneX - b.laneX) < 0.45) {
           s._dead = true; hit = true;
-          burst(0, H * 0.5, '#e8c66a', 6);
+          burst(screenXForWorld(s.laneX * ROAD_WIDTH, s.z), H * 0.5, '#e8c66a', 6);
+        }
+      }
+      // friendly bolts can also shoot down incoming enemy 'BOLT' projectiles
+      if (!hit) {
+        for (let j = bolts.length - 1; j >= 0; j--) {
+          if (j === i) continue;
+          const ob = bolts[j];
+          if (ob.friendly || ob._dead) continue;
+          if (Math.abs(ob.z - b.z) < 130 && Math.abs(ob.laneX - b.laneX) < 0.45) {
+            ob._dead = true; hit = true;
+            burst(screenXForWorld(ob.laneX * ROAD_WIDTH, ob.z), H * 0.5, '#8dffb0', 8);
+            sfx.thud();
+            break;
+          }
+        }
+      }
+      // and can shoot down Leroy's incoming bolts, driving him off after enough hits
+      if (!hit) {
+        for (let j = leroyBolts.length - 1; j >= 0; j--) {
+          const lb = leroyBolts[j];
+          if (Math.abs(lb.laneX - b.laneX) < 0.45 && lb.t > lb.life * 0.25) {
+            leroyBolts.splice(j, 1);
+            hit = true;
+            burst(W / 2, H * 0.6, '#8dffb0', 8);
+            sfx.thud();
+            leroy.shotDown = (leroy.shotDown || 0) + 1;
+            if (leroy.shotDown >= 2 && leroy.active) {
+              leroy.active = false;
+              leroy.retreatT = 600; // ~10s at 60fps
+              leroy.shotDown = 0;
+              toastMsg = tr('leroyRetreat');
+              toastT = 150;
+              sfx.leroyRetreat();
+            }
+            break;
+          }
         }
       }
       if (hit) bolts.splice(i, 1);
@@ -602,6 +771,7 @@ function update() {
   }
   if (hazards.some(h => h._dead)) hazards = hazards.filter(h => !h._dead);
   if (sandwiches.some(s => s._dead)) sandwiches = sandwiches.filter(s => !s._dead);
+  if (bolts.some(b => b._dead)) bolts = bolts.filter(b => !b._dead);
 
   // --- sandwiches on the road ---
   for (let i = sandwiches.length - 1; i >= 0; i--) {
@@ -612,7 +782,7 @@ function update() {
       sandwiches.splice(i, 1);
       player.speed *= 0.32;
       sfx.splat();
-      burst(0, H * 0.74, '#e8c66a', 10);
+      burst(W / 2, H * 0.74, '#e8c66a', 10);
     }
   }
 
@@ -624,7 +794,7 @@ function update() {
       player.boostT = 55;
       player.speed = level.speedMax * 1.45;
       sfx.boost();
-      burst(0, H * 0.74, '#ffe066', 10);
+      burst(W / 2, H * 0.74, '#ffe066', 10);
     }
   }
 
@@ -634,7 +804,7 @@ function update() {
       pk.taken = true;
       player.ammo += 5;
       sfx.gun();
-      burst(0, H * 0.6, '#8dffb0', 10);
+      burst(W / 2, H * 0.6, '#8dffb0', 10);
       updateShootButton();
     }
   }
@@ -643,7 +813,6 @@ function update() {
   if (!player.finZ && player.z >= trackLen) player.finZ = state.raceT;
   if (!rival.finZ && rival.z >= trackLen) rival.finZ = state.raceT;
   if (player.finZ) {
-    state.raceT++;
     if (state.raceT - player.finZ > 55) {
       state.place = rival.finZ && rival.finZ < player.finZ ? 2 : 1;
       const secs = player.finZ / 60;
@@ -651,16 +820,16 @@ function update() {
       const best = getBest(lvlNum, state.char);
       if (best === null || secs < best) {
         setBest(lvlNum, state.char, secs);
-        state.bestMsg = '🎉 New best time!';
+        state.bestMsg = tr('newBest');
       } else {
-        state.bestMsg = 'Best: ' + best.toFixed(1) + 's';
+        state.bestMsg = tr('bestLabel') + best.toFixed(1) + 's';
       }
       const unlocked = getUnlocked();
       if (state.place === 1 && lvlNum === unlocked && lvlNum < LEVELS.length) {
         setUnlocked(lvlNum + 1);
-        state.unlockMsg = '🔓 Next track unlocked!';
+        state.unlockMsg = tr('nextUnlocked');
       } else if (state.place !== 1) {
-        state.unlockMsg = 'So close! Get 1st to unlock the next track!';
+        state.unlockMsg = tr('soClose');
       }
       if (state.place === 1 && lvlNum === LEVELS.length) {
         state.mode = 'victory';
@@ -787,8 +956,15 @@ function drawRoad(t) {
   const baseIdx = Math.max(0, Math.floor(baseZ / SEGMENT_LENGTH));
   const basePercent = (baseZ % SEGMENT_LENGTH) / SEGMENT_LENGTH;
   const camX = player.x * ROAD_WIDTH;
+  const camGroundY = (segments[baseIdx] && segments[baseIdx].y) || 0;
+  const camY = CAMERA_HEIGHT + camGroundY;
 
   const bucket = buildSpriteBuckets(baseIdx);
+
+  // full below-horizon fill first so no stale frame band is left once the
+  // track ends and the segment loop below stops drawing partway down.
+  ctx.fillStyle = theme.grass2;
+  ctx.fillRect(0, H * 0.46, W, H * 0.54);
 
   let x = 0;
   let dx = -((segments[baseIdx] ? segments[baseIdx].curve : 0) * basePercent);
@@ -799,12 +975,13 @@ function drawRoad(t) {
     const idx = baseIdx + n;
     if (idx >= segments.length) break;
     const seg = segments[idx];
+    const nextSeg = segments[idx + 1] || seg;
     const worldZ = idx * SEGMENT_LENGTH;
 
-    const p1 = project(x, 0, worldZ, camX, CAMERA_HEIGHT, camZ);
+    const p1 = project(x, seg.y || 0, worldZ, camX, camY, camZ);
     x = x + dx;
     dx = dx + seg.curve;
-    const p2 = project(x, 0, worldZ + SEGMENT_LENGTH, camX, CAMERA_HEIGHT, camZ);
+    const p2 = project(x, nextSeg.y || 0, worldZ + SEGMENT_LENGTH, camX, camY, camZ);
 
     if (!p1 || !p2 || p1.z <= CAMERA_DEPTH) { prev = { p1, p2, idx }; continue; }
     if (p2.y >= p1.y || p2.y >= maxY) { prev = { p1, p2, idx }; continue; }
@@ -825,12 +1002,17 @@ function drawRoad(t) {
       polygon(p1.x - lw1, p1.y, p1.x + lw1, p1.y, p2.x + lw2, p2.y, p2.x - lw2, p2.y, 'rgba(255,255,255,0.75)');
     }
 
-    // sprites for this segment, positioned at p1
+    // sprites for this segment, positioned at p1 (fade in over the last ~15
+    // draw-distance segments so they don't hard pop into view)
     const items = bucket[n];
     if (items) {
+      const fadeStart = DRAW_DISTANCE - 15;
+      const alpha = n >= fadeStart ? Math.max(0, (DRAW_DISTANCE - n) / 15) : 1;
       for (const it of items) {
         const sx = p1.x + it.laneX * p1.w;
+        if (alpha < 1) ctx.globalAlpha = alpha;
         drawSprite(it.obj, sx, p1.y, p1.w, t);
+        if (alpha < 1) ctx.globalAlpha = 1;
       }
     }
     // Leroy bolts flying toward player rendered along near segments
@@ -838,15 +1020,16 @@ function drawRoad(t) {
     prev = { p1, p2, idx };
   }
   // start / finish markers via bucket-independent z check
-  drawLineMarker(0, baseIdx, camZ, camX, t, true);
-  drawLineMarker(trackLen, baseIdx, camZ, camX, t, false);
+  drawLineMarker(0, baseIdx, camZ, camX, camY, t, true);
+  drawLineMarker(trackLen, baseIdx, camZ, camX, camY, t, false);
 }
 
-function drawLineMarker(zPos, baseIdx, camZ, camX, t, isStart) {
+function drawLineMarker(zPos, baseIdx, camZ, camX, camY, t, isStart) {
   const idx = Math.floor(zPos / SEGMENT_LENGTH);
   const n = idx - baseIdx;
   if (n < 0 || n >= DRAW_DISTANCE) return;
-  const p = project(0, 0, zPos, camX, CAMERA_HEIGHT, camZ);
+  const worldY = (segments[idx] && segments[idx].y) || 0;
+  const p = project(0, worldY, zPos, camX, camY, camZ);
   if (!p || p.z <= CAMERA_DEPTH) return;
   const sq = Math.max(4, Math.min(28, p.w / 10));
   const rows = Math.max(2, Math.floor((p.w * 2) / sq));
@@ -863,7 +1046,7 @@ function drawLineMarker(zPos, baseIdx, camZ, camX, t, isStart) {
     ctx.font = 'bold ' + Math.max(9, Math.min(40, 12 * p.scale * 30)) + 'px -apple-system, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('FINISH', p.x, p.y - sq * 5 - 8 * p.scale);
+    ctx.fillText(tr('finish'), p.x, p.y - sq * 5 - 8 * p.scale);
   }
 }
 
@@ -887,14 +1070,13 @@ function drawSprite(obj, sx, sy, scale, t) {
     case 'SANDWICH': drawSandwichSm(0, obj.e.t < 0 ? -(-obj.e.t) * 0.35 : 0, 16); break;
     case 'FBOLT': drawBoltGlow(0, 0, '#8dffb0'); break;
     case 'BOLT': drawBoltGlow(0, 0, '#ffb066'); break;
-    case 'RIVAL': drawVehicle(0, 0, state.char === 'S' ? 'L' : 'S', level.vehicle, false, t, false); break;
+    case 'RIVAL': drawVehicle(0, 0, state.char === 'S' ? 'L' : 'S', level.vehicle, false, t, true, rival.speed / level.speedMax); break;
     case 'DECO': drawDeco(0, 0, obj.e.side, t); break;
   }
   ctx.restore();
 }
 
 function drawDeco(x, y, side, t) {
-  if (theme.deco === 'palm') drawPalmSm(x * side < 0 ? 0 : 0, 0);
   if (theme.deco === 'palm') { drawPalmSm(0, 0); return; }
   if (theme.deco === 'pine') { drawPineSm(0, 0); return; }
   if (theme.deco === 'star' || theme.deco === 'crystal') { drawCrystalSm(0, 0, t); return; }
@@ -1069,9 +1251,9 @@ function wheel(x, y, r) {
 }
 
 // ============ VEHICLES ============
-function drawVehicle(sx, y, who, vType, boosting, t, isPlayer) {
+function drawVehicle(sx, y, who, vType, boosting, t, isPlayer, spd) {
   const bob = Math.sin(t / 220 + (isPlayer ? 0 : 3)) * 1.6;
-  if (vType === 'ship') drawShip(sx, y + bob, who, boosting, t, isPlayer);
+  if (vType === 'ship') drawShip(sx, y + bob, who, boosting, t, isPlayer, spd);
   else drawKartBody(sx, y + bob, who, boosting, isPlayer);
 }
 
@@ -1096,18 +1278,20 @@ function drawKartBody(sx, y, who, boosting, fromBehind) {
   if (who === 'S') drawStitchDriver(sx - 4, y - 26); else drawLiloDriver(sx - 4, y - 26);
 }
 
-function drawShip(sx, y, who, boosting, t, fromBehind) {
+function drawShip(sx, y, who, boosting, t, fromBehind, spd) {
   const bodyMain = who === 'S' ? '#3d7bc9' : '#f2b035';
   const bodyAccent = who === 'S' ? '#e04438' : '#e04438';
   const glow = 0.5 + Math.sin(t / 140) * 0.3;
+  // engine flame length grows with speed on top of the boost extension
+  const flameLen = (boosting ? 34 : 16) + (spd || 0) * 22;
   // engine glow trail
   ctx.fillStyle = 'rgba(120,190,255,' + (boosting ? 0.9 : glow * 0.6) + ')';
   ctx.beginPath();
-  ctx.moveTo(sx - 34, y - 4); ctx.lineTo(sx - 34 - (boosting ? 34 : 16), y); ctx.lineTo(sx - 34, y + 6);
+  ctx.moveTo(sx - 34, y - 4); ctx.lineTo(sx - 34 - flameLen, y); ctx.lineTo(sx - 34, y + 6);
   ctx.closePath(); ctx.fill();
   ctx.fillStyle = 'rgba(255,150,80,' + (boosting ? 0.9 : glow * 0.6) + ')';
   ctx.beginPath();
-  ctx.moveTo(sx + 34, y - 4); ctx.lineTo(sx + 34 + (boosting ? 34 : 16), y); ctx.lineTo(sx + 34, y + 6);
+  ctx.moveTo(sx + 34, y - 4); ctx.lineTo(sx + 34 + flameLen, y); ctx.lineTo(sx + 34, y + 6);
   ctx.closePath(); ctx.fill();
   // hover shadow
   ctx.fillStyle = 'rgba(0,0,0,0.18)';
@@ -1317,6 +1501,18 @@ function draw() {
     drawBackground(t);
     drawRoad(t);
 
+    // telegraph: ~0.5s red glow at the bottom edge on Leroy's side before he fires
+    if (leroy.active && !player.finZ && leroy.fireT <= 30 && leroy.fireT > 0) {
+      const side = leroy.x < 0 ? -1 : 1;
+      const glowX = W / 2 + side * W * 0.4;
+      const warnAlpha = 0.25 + 0.25 * Math.sin(t / 60);
+      const grad = ctx.createRadialGradient(glowX, H, 10, glowX, H, 160);
+      grad.addColorStop(0, 'rgba(255,60,60,' + warnAlpha + ')');
+      grad.addColorStop(1, 'rgba(255,60,60,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.ellipse(glowX, H, 160, 90, 0, 0, Math.PI * 2); ctx.fill();
+    }
+
     // Leroy behind player (simplified rear presence)
     if (leroy.active && !player.finZ) {
       const scale = 1 - Math.min(1, (leroy.dist - 260) / 640);
@@ -1324,23 +1520,44 @@ function draw() {
       const sy = H * 0.9 - scale * 30;
       drawLeroyShip(sx, sy, 0.35 + scale * 0.55, t);
     }
-    // leroy bolts traveling from leroy toward player (screen-space lerp)
+    // leroy bolts traveling from leroy toward player (screen-space lerp); the end point
+    // tracks the player's lane relative to the bolt's target lane so a bolt aimed at
+    // your lane visibly flies AT you, and steering away visibly moves it aside
     for (const b of leroyBolts) {
       const f = b.t / b.life;
-      const sx = W / 2 + b.laneX * W * 0.22 * (1 - f) + (b.laneX * 0.35) * W * f;
+      const startSx = W / 2 + b.laneX * W * 0.22;
+      const endSx = W / 2 + (b.laneX - player.x) * W * 0.3;
+      const sx = startSx * (1 - f) + endSx * f;
       const sy = H * 0.9 - f * H * 0.16;
       ctx.fillStyle = '#ff5c5c';
       ctx.beginPath(); ctx.ellipse(sx, sy, 10 - f * 4, 5, 0, 0, Math.PI * 2); ctx.fill();
     }
 
-    // player vehicle fixed near bottom of screen
-    const px = W / 2 + player.steerLean * 30 + Math.sin(player.x) * 4;
+    // speed sensation: radial streaks near the screen edges above 90% max speed
+    if (player.speed > level.speedMax * 0.9) {
+      const intensity = Math.min(1, (player.speed - level.speedMax * 0.9) / (level.speedMax * 0.15));
+      ctx.strokeStyle = 'rgba(255,255,255,' + (0.12 + intensity * 0.28) + ')';
+      ctx.lineWidth = 2;
+      const cx = W / 2, cy = H * 0.55;
+      const r1 = Math.min(W, H) * 0.44, r2 = r1 + 30 + intensity * 50;
+      for (let i = 0; i < 14; i++) {
+        const ang = (i / 14) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1 * 0.6);
+        ctx.lineTo(cx + Math.cos(ang) * r2, cy + Math.sin(ang) * r2 * 0.6);
+        ctx.stroke();
+      }
+    }
+
+    // player vehicle: banked lateral movement so lane position reads clearly on screen
+    const px = W / 2 + player.x * W * 0.12;
     const py = H * 0.86;
     if (!(player.invuln > 0 && Math.floor(player.invuln / 4) % 2)) {
       ctx.save();
       ctx.translate(px, py);
+      ctx.rotate(player.steerLean * 0.12);
       ctx.scale(1.1 * K, 1.1 * K);
-      drawVehicle(0, 0, state.char, level.vehicle, player.boostT > 0, t, true);
+      drawVehicle(0, 0, state.char, level.vehicle, player.boostT > 0, t, true, player.speed / level.speedMax);
       ctx.restore();
       if (player.stun > 0) {
         ctx.font = 'bold 22px -apple-system, sans-serif';
@@ -1388,13 +1605,13 @@ function drawHUD(t) {
   ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 4;
   const secs = (state.raceT / 60).toFixed(1) + 's';
   const ahead = player.finZ ? state.place === 1 : player.z >= rival.z;
-  const label = (ahead ? '🥇 1st' : '🥈 2nd') + '   ' + secs;
+  const label = (ahead ? tr('first') : tr('second')) + '   ' + secs;
   ctx.strokeText(label, W - pad, pad);
   ctx.fillText(label, W - pad, pad);
 
   ctx.font = 'bold 15px -apple-system, sans-serif';
   ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-  const lvlLabel = 'Level ' + (state.levelIdx + 1) + ': ' + level.name;
+  const lvlLabel = tr('level') + (state.levelIdx + 1) + ': ' + level.name;
   const lvlY = pad + 34;
   ctx.strokeText(lvlLabel, W / 2, lvlY);
   ctx.fillText(lvlLabel, W / 2, lvlY);
@@ -1415,7 +1632,17 @@ function drawHUD(t) {
     ctx.fillStyle = '#8dffb0';
     let ammoStr = '';
     for (let i = 0; i < player.ammo; i++) ammoStr += '✦';
-    ctx.fillText('Ammo ' + ammoStr, pad, H - Math.max(14, H * 0.02));
+    ctx.fillText(tr('ammo') + ammoStr, pad, H - Math.max(14, H * 0.02));
+  }
+
+  if (toastT > 0 && toastMsg) {
+    ctx.font = 'bold 18px -apple-system, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.globalAlpha = Math.min(1, toastT / 30);
+    ctx.fillStyle = '#ff8a5c'; ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 4;
+    ctx.strokeText(toastMsg, W / 2, H * 0.16);
+    ctx.fillText(toastMsg, W / 2, H * 0.16);
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -1427,10 +1654,10 @@ function drawOverlays(t) {
     const big = Math.min(48, W * 0.062);
     ctx.font = 'bold ' + big + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#ffd700';
-    ctx.fillText('🚀 SPACESHIP RACERS 🛸', W / 2, H * 0.13);
+    ctx.fillText(tr('title'), W / 2, H * 0.13);
     ctx.font = 'bold ' + Math.min(20, W * 0.038) + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#fff';
-    ctx.fillText('Who is racing today? Tap a driver!', W / 2, H * 0.22);
+    ctx.fillText(tr('pickDriver'), W / 2, H * 0.22);
     for (const [i, who] of [[0, 'S'], [1, 'L']]) {
       const cx = W * (i === 0 ? 0.3 : 0.7), cy = H * 0.5;
       ctx.fillStyle = state.sel === i ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.18)';
@@ -1445,55 +1672,55 @@ function drawOverlays(t) {
       ctx.restore();
       ctx.font = 'bold ' + Math.min(22, W * 0.042) + 'px -apple-system, sans-serif';
       ctx.fillStyle = '#fff';
-      ctx.fillText(who === 'S' ? 'STITCH' : 'LILO', cx, cy + rh / 2 - 34);
+      ctx.fillText(who === 'S' ? tr('stitch') : tr('lilo'), cx, cy + rh / 2 - 34);
       ctx.font = '13px -apple-system, sans-serif';
       ctx.fillStyle = '#ffe066';
-      ctx.fillText('5 tracks await!', cx, cy + rh / 2 - 14);
+      ctx.fillText(tr('tracksAwait'), cx, cy + rh / 2 - 14);
     }
     ctx.font = '13px -apple-system, sans-serif';
     ctx.fillStyle = '#dce9f5';
-    ctx.fillText('⌨  1 = Stitch · 2 = Lilo · Enter to pick', W / 2, H * 0.9);
+    ctx.fillText(tr('charHint'), W / 2, H * 0.9);
   } else if (state.mode === 'level') {
     drawLevelSelect(t);
   } else if (state.mode === 'count') {
     const n = 3 - Math.floor(state.countT / 60);
     ctx.font = 'bold ' + Math.min(110, W * 0.2) + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 8;
-    ctx.strokeText(n > 0 ? String(n) : 'GO!', W / 2, H * 0.4);
-    ctx.fillText(n > 0 ? String(n) : 'GO!', W / 2, H * 0.4);
+    ctx.strokeText(n > 0 ? String(n) : tr('go'), W / 2, H * 0.4);
+    ctx.fillText(n > 0 ? String(n) : tr('go'), W / 2, H * 0.4);
     ctx.font = Math.min(16, W * 0.032) + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#dce9f5';
     ctx.strokeStyle = 'rgba(0,0,0,0.45)';
     ctx.lineWidth = 3;
-    ctx.strokeText('◀ ▶ steer · ship flies itself', W / 2, H * 0.55);
-    ctx.fillText('◀ ▶ steer · ship flies itself', W / 2, H * 0.55);
+    ctx.strokeText(tr('countHint'), W / 2, H * 0.55);
+    ctx.fillText(tr('countHint'), W / 2, H * 0.55);
   } else if (state.mode === 'finish') {
     ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(0, 0, W, H);
     const big = Math.min(50, W * 0.085);
     ctx.font = 'bold ' + big + 'px -apple-system, sans-serif';
     ctx.fillStyle = state.place === 1 ? '#ffd700' : '#dce9f5';
-    ctx.fillText(state.place === 1 ? '🏆 1st PLACE!' : '🥈 2nd place…', W / 2, H * 0.3);
+    ctx.fillText(state.place === 1 ? tr('firstPlace') : tr('secondPlace'), W / 2, H * 0.3);
     ctx.font = 'bold ' + Math.min(24, W * 0.048) + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#fff';
-    ctx.fillText('Time: ' + (player.finZ / 60).toFixed(1) + 's    ' + state.bestMsg, W / 2, H * 0.44);
+    ctx.fillText(tr('time') + (player.finZ / 60).toFixed(1) + 's    ' + state.bestMsg, W / 2, H * 0.44);
     ctx.font = Math.min(18, W * 0.036) + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#ffe066';
     ctx.fillText(state.unlockMsg, W / 2, H * 0.53);
     ctx.font = '16px -apple-system, sans-serif';
     ctx.fillStyle = '#fff';
-    ctx.fillText('Tap to return to Level Select', W / 2, H * 0.68);
+    ctx.fillText(tr('tapReturn'), W / 2, H * 0.68);
   } else if (state.mode === 'victory') {
     ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, W, H);
     const big = Math.min(60, W * 0.1);
     ctx.font = 'bold ' + big + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#ffd700';
-    ctx.fillText('🏆 CHAMPION! 🏆', W / 2, H * 0.36);
+    ctx.fillText(tr('champion'), W / 2, H * 0.36);
     ctx.font = 'bold ' + Math.min(24, W * 0.045) + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#fff';
-    ctx.fillText('You conquered all 5 tracks, ' + (state.char === 'S' ? 'Stitch' : 'Lilo') + '!', W / 2, H * 0.48);
+    ctx.fillText(tr('conquered')(state.char === 'S' ? tr('driverName').S : tr('driverName').L), W / 2, H * 0.48);
     ctx.font = '16px -apple-system, sans-serif';
     ctx.fillStyle = '#ffe066';
-    ctx.fillText('Tap to return to Level Select', W / 2, H * 0.62);
+    ctx.fillText(tr('tapReturn'), W / 2, H * 0.62);
   }
 }
 
@@ -1501,13 +1728,17 @@ function drawLevelSelect(t) {
   ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(0, 0, W, H);
   ctx.font = 'bold ' + Math.min(15, W * 0.03) + 'px -apple-system, sans-serif';
   ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-  ctx.fillText('‹ Back', 16, 16);
+  ctx.fillText(tr('back'), 16, 16);
   ctx.textAlign = 'center';
   ctx.font = 'bold ' + Math.min(30, W * 0.055) + 'px -apple-system, sans-serif';
   ctx.fillStyle = '#ffd700';
-  ctx.fillText((state.char === 'S' ? 'STITCH' : 'LILO') + ' — Choose a track', W / 2, H * 0.06);
+  ctx.fillText((state.char === 'S' ? tr('stitch') : tr('lilo')) + tr('chooseTrack'), W / 2, H * 0.06);
 
-  const unlocked = getUnlocked();
+  // cache best-times/unlocked lookups instead of hitting localStorage every frame
+  if (!lsCache) {
+    lsCache = { unlocked: getUnlocked(), bests: LEVELS.map((_, i) => getBest(i + 1, state.char)) };
+  }
+  const unlocked = lsCache.unlocked;
   const cols = W > 700 ? 5 : (W > 460 ? 3 : 2);
   const cw = Math.min(190, (W - 60) / cols);
   const ch = H * 0.3;
@@ -1525,25 +1756,35 @@ function drawLevelSelect(t) {
     ctx.beginPath();
     if (ctx.roundRect) ctx.roundRect(cx, cy, cw, ch, 14); else ctx.rect(cx, cy, cw, ch);
     ctx.fill();
+    if (i === state.levelIdx) {
+      // keyboard-selection highlight, otherwise invisible when navigating with arrow keys
+      ctx.save();
+      ctx.strokeStyle = '#ffd700';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(cx + 1.5, cy + 1.5, cw - 3, ch - 3, 14); else ctx.rect(cx + 1.5, cy + 1.5, cw - 3, ch - 3);
+      ctx.stroke();
+      ctx.restore();
+    }
     ctx.font = Math.min(40, cw * 0.24) + 'px -apple-system, sans-serif';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = isUnlocked ? '#fff' : 'rgba(255,255,255,0.4)';
     ctx.fillText(isUnlocked ? themeEmoji[lvl.theme] : '🔒', cx + cw / 2, cy + ch * 0.32);
     ctx.font = 'bold ' + Math.min(15, cw * 0.09) + 'px -apple-system, sans-serif';
-    ctx.fillText('Lvl ' + (i + 1), cx + cw / 2, cy + ch * 0.58);
+    ctx.fillText(tr('lvlShort') + (i + 1), cx + cw / 2, cy + ch * 0.58);
     ctx.font = Math.min(12, cw * 0.07) + 'px -apple-system, sans-serif';
     ctx.fillText(lvl.name, cx + cw / 2, cy + ch * 0.72);
     if (isUnlocked) {
-      const best = getBest(i + 1, state.char);
+      const best = lsCache.bests[i];
       ctx.font = Math.min(11, cw * 0.065) + 'px -apple-system, sans-serif';
       ctx.fillStyle = '#ffe066';
-      ctx.fillText(best ? 'best ' + best.toFixed(1) + 's' : 'no time yet', cx + cw / 2, cy + ch * 0.87);
+      ctx.fillText(best ? tr('bestTime')(best.toFixed(1)) : tr('noTime'), cx + cw / 2, cy + ch * 0.87);
     }
   }
   ctx.font = Math.min(13, W * 0.026) + 'px -apple-system, sans-serif';
   ctx.fillStyle = '#dce9f5';
-  ctx.fillText('🚀 Auto-accelerates — ◀ ▶ or A/D to steer, tap ✦ to fire lasers', W / 2, H * 0.90);
-  ctx.fillText('Beat a track in 1st place to unlock the next!', W / 2, H * 0.945);
+  ctx.fillText(tr('levelHint'), W / 2, H * 0.90);
+  ctx.fillText(tr('unlockHint'), W / 2, H * 0.945);
 }
 
 // ============ MAIN LOOP ============

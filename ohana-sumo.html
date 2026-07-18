@@ -53,6 +53,48 @@
 <script>
 'use strict';
 
+// ============ i18n ============
+let LANG = 'en';
+try { LANG = localStorage.getItem('ohanaLang') === 'ro' ? 'ro' : 'en'; } catch (e) {}
+const T = {
+  en: {
+    title: '🌺 OHANA SUMO',
+    selectPrompt: "Who's fighting today? Tap a fighter!",
+    stitch: 'STITCH',
+    reuben: 'REUBEN',
+    winsLosses: (w, l) => 'wins: ' + w + '  losses: ' + l,
+    controlsHint: '⌨  1 = Stitch · 2 = Reuben · Enter to fight! Hold Space to charge a dash.',
+    hajime: 'HAJIME!',
+    roundLabel: n => 'Round ' + n,
+    roundWins: name => name + ' wins the round!',
+    matchWins: name => '🏆 ' + name + ' WINS!',
+    finalScore: (a, b) => 'Final score: ' + a + ' - ' + b,
+    tapAgain: 'Tap to play again',
+    tideWarning: 'The tide is coming in!',
+    timeLeft: s => s + 's',
+    draw: "It's a tie! Replaying the round!",
+  },
+  ro: {
+    title: '🌺 SUMO OHANA',
+    selectPrompt: 'Cine luptă azi? Atinge un luptător!',
+    stitch: 'STITCH',
+    reuben: 'REUBEN',
+    winsLosses: (w, l) => 'victorii: ' + w + '  înfrângeri: ' + l,
+    controlsHint: '⌨  1 = Stitch · 2 = Reuben · Enter pentru luptă! Ține Space pentru un atac.',
+    hajime: 'HAJIME!',
+    roundLabel: n => 'Runda ' + n,
+    roundWins: name => name + ' câștigă runda!',
+    matchWins: name => '🏆 ' + name + ' CÂȘTIGĂ!',
+    finalScore: (a, b) => 'Scor final: ' + a + ' - ' + b,
+    tapAgain: 'Atinge pentru o nouă luptă',
+    tideWarning: 'Vine valul!',
+    timeLeft: s => s + 's',
+    draw: 'Egalitate! Se repetă runda!',
+  },
+};
+function t(key) { return T[LANG][key]; }
+try { document.title = LANG === 'ro' ? 'Sumo Ohana' : 'Ohana Sumo'; } catch (e) {}
+
 // ============ SETUP ============
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -66,6 +108,7 @@ function layoutRing() {
 }
 
 function resize() {
+  const oldCX = ringCX, oldCY = ringCY, oldR = ringR;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   W = window.innerWidth;
   H = window.innerHeight;
@@ -76,10 +119,18 @@ function resize() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   K = Math.max(0.8, Math.min(1.5, H / 460)); // sprite scale
   layoutRing();
+  // Re-map fighter positions relative to the ring so a resize/orientation
+  // change mid-round doesn't strand them outside the new ring boundary.
+  if (oldR > 0) {
+    for (const f of [stitch, reuben]) {
+      const ox = (f.x - oldCX) / oldR, oy = (f.y - oldCY) / oldR;
+      f.x = ringCX + ox * ringR;
+      f.y = ringCY + oy * ringR;
+    }
+  }
 }
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 100));
-resize();
 
 // ============ SOUND ============
 let audioCtx = null;
@@ -108,14 +159,36 @@ const sfx = {
   roundWin()  { [523, 659, 784].forEach((f, i) => setTimeout(() => beep(f, 0.18, 'square', 0.08), i * 120)); },
   matchWin()  { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.22, 'square', 0.09), i * 140)); },
   outOfRing() { beep(300, 0.3, 'sawtooth', 0.08, -200); },
+  dash()      { beep(200, 0.12, 'square', 0.08, 60); },
+  whiff()     { beep(120, 0.16, 'triangle', 0.06, -40); },
 };
 
 // ============ GAME STATE ============
 const BODY_R = 26;      // base collision/sprite radius (scaled by K)
 const PUSH_COEF = 0.6;  // how hard a full-speed charge shoves the opponent
-const state = { mode: 'select', sel: 0, char: 'S', countT: 0, endT: 0, round: 1, wins: { S: 0, R: 0 }, roundWinner: null, matchWinner: null };
-const stitch = { id: 'S', x: 0, y: 0, vx: 0, vy: 0, bodyR: BODY_R, armT: 0, pushing: false, aimT: 0, noiseX: 0, noiseY: 0 };
-const reuben = { id: 'R', x: 0, y: 0, vx: 0, vy: 0, bodyR: BODY_R, armT: 0, pushing: false, aimT: 0, noiseX: 0, noiseY: 0 };
+const DASH_CHARGE_MAX = 60;  // frames (~1s) to fully charge a dash
+const ROUND_TIME = 45 * 60;  // frames (45s) before the tide starts coming in
+
+const state = {
+  mode: 'select', sel: 0, char: 'S', countT: 0, endT: 0, round: 1,
+  wins: { S: 0, R: 0 }, roundWinner: null, matchWinner: null, isDraw: false,
+  roundT: 0, shrinkFrac: 0, shrinking: false,
+  slowMoT: 0, pendingWinner: null, pendingLoser: null,
+  shakeT: 0, shakeMag: 0, roundPopT: 0, crowdJumpT: 0, reubenAggro: 1,
+};
+
+function makeFighter(id) {
+  return {
+    id, x: 0, y: 0, vx: 0, vy: 0, bodyR: BODY_R, armT: 0, pushing: false, aimT: 0, noiseX: 0, noiseY: 0,
+    charging: false, chargeT: 0, chargeDir: { x: 0, y: 0 },
+    dashing: false, dashT: 0, dashWhiffT: 0, dashHit: false, dashCooldown: 0,
+    staggerT: 0,
+    tumbling: false, tumbleAngle: 0, tumbleVX: 0, tumbleVY: 0, tumbleSpin: 0,
+    snackT: 0, snackCooldown: 300, aiDashWindup: 0, aiCharging: false, aiChargeDir: { x: 0, y: 0 }, aiMoveDir: { x: 0, y: 0 },
+  };
+}
+const stitch = makeFighter('S');
+const reuben = makeFighter('R');
 let parts = [];
 let wasColliding = false;
 
@@ -148,6 +221,17 @@ function burst(x, y, color, n) {
     });
   }
 }
+function burstConfetti() {
+  const colors = ['#ff6b6b', '#ffd93d', '#6bc9ef', '#7be08c', '#c77bef'];
+  for (let i = 0; i < 60; i++) {
+    parts.push({
+      x: Math.random() * W, y: -10 - Math.random() * 140,
+      vx: (Math.random() - 0.5) * 2, vy: 1.5 + Math.random() * 2,
+      life: 180 + Math.random() * 100,
+      color: colors[i % colors.length],
+    });
+  }
+}
 
 function startMatch(c) {
   state.char = c;
@@ -157,17 +241,34 @@ function startMatch(c) {
   startRound();
 }
 
+function resetFighterRound(f, x, y) {
+  f.x = x; f.y = y;
+  f.vx = 0; f.vy = 0; f.armT = 0; f.pushing = false;
+  f.bodyR = BODY_R * K; f.aimT = 0; f.noiseX = 0; f.noiseY = 0;
+  f.charging = false; f.chargeT = 0; f.chargeDir = { x: 0, y: 0 };
+  f.dashing = false; f.dashT = 0; f.dashWhiffT = 0; f.dashHit = false; f.dashCooldown = 0;
+  f.staggerT = 0;
+  f.tumbling = false; f.tumbleAngle = 0; f.tumbleVX = 0; f.tumbleVY = 0; f.tumbleSpin = 0;
+  f.snackT = 0; f.snackCooldown = 200 + Math.random() * 200;
+  f.aiDashWindup = 0; f.aiCharging = false; f.aiChargeDir = { x: 0, y: 0 }; f.aiMoveDir = { x: 0, y: 0 };
+}
+
 function startRound() {
   state.mode = 'count';
   state.countT = 0;
   state.roundWinner = null;
-  heldUp = false; heldDown = false; heldLeft = false; heldRight = false;
-  stitch.x = ringCX; stitch.y = ringCY + ringR * 0.55;
-  stitch.vx = 0; stitch.vy = 0; stitch.armT = 0; stitch.pushing = false;
-  stitch.bodyR = BODY_R * K; stitch.aimT = 0; stitch.noiseX = 0; stitch.noiseY = 0;
-  reuben.x = ringCX; reuben.y = ringCY - ringR * 0.55;
-  reuben.vx = 0; reuben.vy = 0; reuben.armT = 0; reuben.pushing = false;
-  reuben.bodyR = BODY_R * K; reuben.aimT = 0; reuben.noiseX = 0; reuben.noiseY = 0;
+  state.isDraw = false;
+  state.roundT = 0;
+  state.shrinkFrac = 0;
+  state.shrinking = false;
+  state.roundPopT = 40;
+  state.reubenAggro = 1 + (state.round - 1) * 0.12;
+  // Only the joystick's own state resets between rounds — held movement/charge
+  // keys deliberately persist so a kid holding a key doesn't get stuck mid-round.
+  joyReset();
+  joyChargeArmed = false;
+  resetFighterRound(stitch, ringCX, ringCY + ringR * 0.55);
+  resetFighterRound(reuben, ringCX, ringCY - ringR * 0.55);
   wasColliding = false;
   parts = [];
 }
@@ -177,6 +278,9 @@ const joyBase = document.getElementById('joyBase');
 let joyDir = { x: 0, y: 0 };
 let joyActive = false;
 let joyKnobOffset = { x: 0, y: 0 };
+let joyTouchId = null;
+let joyLastTapT = 0;
+let joyChargeArmed = false;
 
 function joyUpdate(clientX, clientY) {
   const r = joyBase.getBoundingClientRect();
@@ -196,23 +300,44 @@ function joyReset() {
 joyBase.addEventListener('touchstart', e => {
   e.preventDefault();
   initAudio();
+  const t0 = e.changedTouches[0];
+  const now = performance.now();
+  // Track the specific finger by identifier so a resting/second finger on the
+  // canvas can't hijack the joystick. Double-tap-and-hold arms a charge dash.
+  if (joyTouchId === null && now - joyLastTapT < 300) {
+    joyChargeArmed = true;
+  }
+  joyLastTapT = now;
+  joyTouchId = t0.identifier;
   joyActive = true;
-  const t = e.touches[0];
-  joyUpdate(t.clientX, t.clientY);
+  joyUpdate(t0.clientX, t0.clientY);
 }, { passive: false });
 joyBase.addEventListener('touchmove', e => {
   e.preventDefault();
-  if (!joyActive) return;
-  const t = e.touches[0];
-  joyUpdate(t.clientX, t.clientY);
+  if (!joyActive || joyTouchId === null) return;
+  for (let i = 0; i < e.changedTouches.length; i++) {
+    const tt = e.changedTouches[i];
+    if (tt.identifier === joyTouchId) { joyUpdate(tt.clientX, tt.clientY); break; }
+  }
 }, { passive: false });
-joyBase.addEventListener('touchend', e => { e.preventDefault(); joyReset(); }, { passive: false });
-joyBase.addEventListener('touchcancel', e => { e.preventDefault(); joyReset(); }, { passive: false });
+function joyTouchEndHandler(e) {
+  e.preventDefault();
+  for (let i = 0; i < e.changedTouches.length; i++) {
+    if (e.changedTouches[i].identifier === joyTouchId) {
+      joyTouchId = null;
+      joyChargeArmed = false;
+      joyReset();
+      break;
+    }
+  }
+}
+joyBase.addEventListener('touchend', joyTouchEndHandler, { passive: false });
+joyBase.addEventListener('touchcancel', joyTouchEndHandler, { passive: false });
 joyBase.addEventListener('mousedown', e => { initAudio(); joyActive = true; joyUpdate(e.clientX, e.clientY); });
 window.addEventListener('mousemove', e => { if (joyActive) joyUpdate(e.clientX, e.clientY); });
 window.addEventListener('mouseup', () => { if (joyActive) joyReset(); });
 
-let heldUp = false, heldDown = false, heldLeft = false, heldRight = false;
+let heldUp = false, heldDown = false, heldLeft = false, heldRight = false, heldCharge = false;
 function getInputDir() {
   const kx = (heldRight ? 1 : 0) - (heldLeft ? 1 : 0);
   const ky = (heldDown ? 1 : 0) - (heldUp ? 1 : 0);
@@ -233,8 +358,8 @@ function tapAt(x, y) {
 }
 canvas.addEventListener('touchstart', e => {
   e.preventDefault();
-  const t = e.touches[0];
-  tapAt(t.clientX, t.clientY);
+  const t0 = e.touches[0];
+  tapAt(t0.clientX, t0.clientY);
 }, { passive: false });
 canvas.addEventListener('mousedown', e => tapAt(e.clientX, e.clientY));
 
@@ -244,13 +369,14 @@ window.addEventListener('keydown', e => {
   if (e.code === 'ArrowDown' || e.code === 'KeyS') heldDown = true;
   if (e.code === 'ArrowLeft' || e.code === 'KeyA') heldLeft = true;
   if (e.code === 'ArrowRight' || e.code === 'KeyD') heldRight = true;
+  if (e.code === 'Space' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') heldCharge = true;
   if (state.mode === 'select') {
     if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') { state.sel = 1 - state.sel; sfx.tick(); }
     if (e.code === 'Digit1') startMatch('S');
     if (e.code === 'Digit2') startMatch('R');
-    if (e.code === 'Enter' || e.code === 'Space') startMatch(state.sel === 0 ? 'S' : 'R');
+    if (e.code === 'Enter') startMatch(state.sel === 0 ? 'S' : 'R');
   } else if (state.mode === 'finish') {
-    if (e.code === 'Enter' || e.code === 'Space') state.mode = 'select';
+    if (e.code === 'Enter') state.mode = 'select';
   }
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
 });
@@ -259,13 +385,17 @@ window.addEventListener('keyup', e => {
   if (e.code === 'ArrowDown' || e.code === 'KeyS') heldDown = false;
   if (e.code === 'ArrowLeft' || e.code === 'KeyA') heldLeft = false;
   if (e.code === 'ArrowRight' || e.code === 'KeyD') heldRight = false;
+  if (e.code === 'Space' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') heldCharge = false;
 });
 function resetInputState() {
-  heldUp = false; heldDown = false; heldLeft = false; heldRight = false;
+  heldUp = false; heldDown = false; heldLeft = false; heldRight = false; heldCharge = false;
+  joyChargeArmed = false;
   joyReset();
 }
 window.addEventListener('blur', resetInputState);
 document.addEventListener('visibilitychange', () => { if (document.hidden) resetInputState(); });
+
+resize();
 
 // ============ AI ============
 function cpuDir(cpu, target) {
@@ -284,6 +414,39 @@ function cpuDir(cpu, target) {
   return { x: dx / len, y: dy / len };
 }
 
+// Reuben's personality: he occasionally takes a ~1s telegraphed sandwich
+// break, and gets more aggressive (see state.reubenAggro) in later rounds.
+// He also occasionally winds up a telegraphed (wobbly) charge dash.
+function aiThink(cf, target) {
+  cf.aiCharging = false;
+  if (cf.id === 'R') {
+    if (cf.snackT > 0) {
+      cf.snackT--;
+      cf.aiMoveDir = { x: 0, y: 0 };
+      return;
+    }
+    cf.snackCooldown--;
+    if (cf.snackCooldown <= 0 && !cf.dashing && cf.staggerT <= 0 && !cf.charging) {
+      cf.snackT = 55; // ~0.9s munching pause, telegraphed via drawSnack()
+      cf.snackCooldown = 400 + Math.random() * 400;
+      cf.aiMoveDir = { x: 0, y: 0 };
+      return;
+    }
+  }
+  if (!cf.charging && !cf.dashing && cf.staggerT <= 0 && cf.dashCooldown <= 0 && cf.aiDashWindup <= 0 && Math.random() < 0.006) {
+    cf.aiDashWindup = 34; // telegraphed wind-up frames before the dash fires
+  }
+  if (cf.aiDashWindup > 0) {
+    cf.aiDashWindup--;
+    const dir = cpuDir(cf, target);
+    cf.aiChargeDir = dir;
+    cf.aiCharging = true;
+    cf.aiMoveDir = { x: dir.x * 0.15, y: dir.y * 0.15 }; // slows + wobbles, dodgeable
+    return;
+  }
+  cf.aiMoveDir = cpuDir(cf, target);
+}
+
 // ============ PHYSICS ============
 function updateFighter(f, dir, maxspd) {
   const ACCEL = 0.55 * K;
@@ -294,6 +457,79 @@ function updateFighter(f, dir, maxspd) {
   if (spd > maxspd) { f.vx = f.vx / spd * maxspd; f.vy = f.vy / spd * maxspd; }
   f.vx *= FRICTION; f.vy *= FRICTION;
   f.x += f.vx; f.y += f.vy;
+}
+function fighterMaxSpd(f, base) { return f.dashing ? base * 2.6 : base; }
+
+// Builds/releases a charge dash. Works identically for the human-controlled
+// fighter (keyboard Space/Shift or joystick double-tap-and-hold) and the AI.
+function updateCharge(f, isCharging, dir) {
+  if (f.dashing) {
+    f.dashT--;
+    if (f.dashWhiffT > 0) f.dashWhiffT--;
+    if (f.dashWhiffT === 0 && !f.dashHit) {
+      // Whiffed the dash — brief self-stagger.
+      f.staggerT = 26;
+      f.vx *= 0.3; f.vy *= 0.3;
+      f.dashWhiffT = -1;
+      sfx.whiff();
+      burst(f.x, f.y, '#cfcfcf', 6);
+    }
+    if (f.dashT <= 0) f.dashing = false;
+    return;
+  }
+  if (f.staggerT > 0) { f.staggerT--; return; }
+  if (isCharging && f.dashCooldown <= 0) {
+    f.charging = true;
+    f.chargeT = Math.min(DASH_CHARGE_MAX, f.chargeT + 1);
+    if (dir && (dir.x !== 0 || dir.y !== 0)) f.chargeDir = dir;
+  } else if (f.charging) {
+    releaseDash(f);
+  }
+}
+function releaseDash(f) {
+  f.charging = false;
+  const power = f.chargeT / DASH_CHARGE_MAX;
+  f.chargeT = 0;
+  if (power < 0.15) return; // too short a hold, no dash
+  let dir = f.chargeDir;
+  if (!dir || (dir.x === 0 && dir.y === 0)) dir = { x: 0, y: f.id === 'S' ? -1 : 1 };
+  const len = Math.hypot(dir.x, dir.y) || 1;
+  const DASH_SPEED = (4.2 * K) * (1.8 + power * 1.4);
+  f.vx = (dir.x / len) * DASH_SPEED;
+  f.vy = (dir.y / len) * DASH_SPEED;
+  f.dashing = true;
+  f.dashT = 16;
+  f.dashWhiffT = 20; // frames within which the dash must make contact
+  f.dashHit = false;
+  f.dashCooldown = 90;
+  sfx.dash();
+}
+function checkDashContact(f) {
+  if (f.dashing && f.pushing) f.dashHit = true;
+}
+
+function pushCoefFor(f, opp) {
+  let coef = PUSH_COEF;
+  // Comeback bonus: whoever is down 0-1 in rounds gets a small push boost.
+  if (state.wins[f.id] === 0 && state.wins[opp.id] === 1) coef *= 1.08;
+  // Reuben's aggression escalates when he's the CPU, in later rounds.
+  if (f.id === 'R' && f === cpuFighter()) coef *= (1 + (state.reubenAggro - 1) * 0.5);
+  return coef;
+}
+
+function emitTrailParticles(f) {
+  const spd = Math.hypot(f.vx, f.vy);
+  if (spd > 2.2 && Math.random() < 0.5) {
+    const backAng = Math.atan2(-f.vy, -f.vx) + (Math.random() - 0.5) * 0.6;
+    parts.push({
+      x: f.x + Math.cos(backAng) * f.bodyR * 0.7,
+      y: f.y + Math.sin(backAng) * f.bodyR * 0.7 + f.bodyR * 0.5,
+      vx: Math.cos(backAng) * 1.2 + (Math.random() - 0.5),
+      vy: -Math.random() * 1.2,
+      life: 16 + Math.random() * 10,
+      color: '#e3c584',
+    });
+  }
 }
 
 function resolveCollision() {
@@ -310,15 +546,18 @@ function resolveCollision() {
     reuben.x += nx * overlap / 2; reuben.y += ny * overlap / 2;
     const velS = stitch.vx * nx + stitch.vy * ny;
     const velR = reuben.vx * nx + reuben.vy * ny;
-    const pushOnR = Math.max(0, velS) * PUSH_COEF;
+    const pushOnR = Math.max(0, velS) * pushCoefFor(stitch, reuben);
     reuben.vx += nx * pushOnR; reuben.vy += ny * pushOnR;
-    const pushOnS = Math.max(0, -velR) * PUSH_COEF;
+    const pushOnS = Math.max(0, -velR) * pushCoefFor(reuben, stitch);
     stitch.vx -= nx * pushOnS; stitch.vy -= ny * pushOnS;
     sPush = velS > 0.05;
     rPush = velR < -0.05;
     if (!wasColliding) {
       sfx.thud();
       burst((stitch.x + reuben.x) / 2, (stitch.y + reuben.y) / 2, '#e8d2a0', 10);
+    } else if ((sPush || rPush) && Math.random() < 0.3) {
+      // sand kicked up during a sustained push-lock
+      burst((stitch.x + reuben.x) / 2, (stitch.y + reuben.y) / 2, '#e3c584', 3);
     }
   }
   wasColliding = colliding;
@@ -327,16 +566,75 @@ function resolveCollision() {
   reuben.armT += ((rPush ? 1 : 0) - reuben.armT) * 0.25;
 }
 
+function getEffRingR() { return ringR * (1 - state.shrinkFrac); }
+
+// A fighter is only out once fully past the rope (out by its own body
+// radius), not merely past the center line. If both cross the same frame,
+// whichever is farther outside loses; an exact tie replays the round.
 function checkRingOut() {
+  const effR = getEffRingR();
   const distS = Math.hypot(stitch.x - ringCX, stitch.y - ringCY);
   const distR = Math.hypot(reuben.x - ringCX, reuben.y - ringCY);
-  if (distS > ringR) return 'S';
-  if (distR > ringR) return 'R';
+  const outS = distS > effR + stitch.bodyR;
+  const outR = distR > effR + reuben.bodyR;
+  if (outS && outR) {
+    const marginS = distS - (effR + stitch.bodyR);
+    const marginR = distR - (effR + reuben.bodyR);
+    if (Math.abs(marginS - marginR) < 0.5) return 'draw';
+    return marginS > marginR ? 'S' : 'R';
+  }
+  if (outS) return 'S';
+  if (outR) return 'R';
   return null;
+}
+
+function triggerShake(mag) { state.shakeT = 18; state.shakeMag = mag; }
+
+function triggerRingOut(outChar) {
+  const winner = outChar === 'S' ? 'R' : 'S';
+  const loser = outChar === 'S' ? stitch : reuben;
+  const dx = loser.x - ringCX, dy = loser.y - ringCY;
+  const dlen = Math.hypot(dx, dy) || 1;
+  loser.tumbling = true;
+  loser.tumbleVX = (dx / dlen) * 3 + loser.vx * 0.3;
+  loser.tumbleVY = (dy / dlen) * 3 + loser.vy * 0.3;
+  loser.tumbleAngle = 0;
+  loser.tumbleSpin = (Math.random() < 0.5 ? -1 : 1) * (0.3 + Math.random() * 0.25);
+  state.pendingLoser = loser;
+  state.pendingWinner = winner;
+  state.isDraw = false;
+  triggerShake(14);
+  sfx.outOfRing();
+  burst(loser.x, loser.y, '#f0d998', 18);
+  state.mode = 'slowmo';
+  state.slowMoT = 40;
+}
+function finalizeRoundOut() {
+  const winner = state.pendingWinner;
+  const loser = state.pendingLoser;
+  state.roundWinner = winner;
+  state.wins[winner]++;
+  state.crowdJumpT = 40;
+  if (loser) loser.tumbling = false;
+  if (state.wins[winner] >= 2) {
+    state.matchWinner = winner;
+    addRecordResult(winner, true);
+    addRecordResult(winner === 'S' ? 'R' : 'S', false);
+    sfx.matchWin();
+    burstConfetti();
+  } else {
+    sfx.roundWin();
+  }
+  state.mode = 'roundEnd';
+  state.endT = 0;
 }
 
 // ============ UPDATE ============
 function update() {
+  if (state.shakeT > 0) state.shakeT--;
+  if (state.crowdJumpT > 0) state.crowdJumpT--;
+  if (state.roundPopT > 0) state.roundPopT--;
+
   for (let i = parts.length - 1; i >= 0; i--) {
     const p = parts[i];
     p.x += p.vx; p.y += p.vy; p.vy += 0.25; p.life--;
@@ -350,45 +648,73 @@ function update() {
     if (state.countT >= 180) { state.mode = 'round'; }
     return;
   }
+  if (state.mode === 'slowmo') {
+    // Brief slow-motion (running the tumble physics at half rate) on the
+    // decisive shove before the round officially resolves.
+    state.slowMoT--;
+    if (state.slowMoT % 2 === 0) {
+      const loser = state.pendingLoser;
+      if (loser) {
+        loser.x += loser.tumbleVX; loser.y += loser.tumbleVY;
+        loser.tumbleVX *= 0.95; loser.tumbleVY *= 0.95;
+        loser.tumbleAngle += loser.tumbleSpin;
+      }
+    }
+    if (state.slowMoT <= 0) finalizeRoundOut();
+    return;
+  }
   if (state.mode === 'roundEnd') {
     state.endT++;
     if (state.endT >= 75) {
       if (state.matchWinner) { state.mode = 'finish'; }
-      else { state.round++; startRound(); }
+      else { if (!state.isDraw) state.round++; startRound(); }
     }
     return;
   }
   if (state.mode !== 'round') return;
 
+  state.roundT++;
+  if (state.roundT > ROUND_TIME) {
+    state.shrinking = true;
+    state.shrinkFrac = Math.min(0.55, state.shrinkFrac + 0.0012);
+  }
+
   const MAXSPD = 4.2 * K;
   stitch.bodyR = BODY_R * K; reuben.bodyR = BODY_R * K;
 
   const pf = playerFighter(), cf = cpuFighter();
+  pf.dashCooldown = Math.max(0, pf.dashCooldown - 1);
+  cf.dashCooldown = Math.max(0, cf.dashCooldown - 1);
+
   const inputDir = getInputDir();
-  updateFighter(pf, inputDir, MAXSPD);
-  const aiDir = cpuDir(cf, pf);
-  updateFighter(cf, aiDir, MAXSPD * 0.9);
+  const playerCharging = heldCharge || (joyChargeArmed && joyActive);
+  updateCharge(pf, playerCharging, inputDir);
+  aiThink(cf, pf);
+  updateCharge(cf, cf.aiCharging, cf.aiChargeDir);
+
+  const moveDirP = (pf.dashing || pf.staggerT > 0) ? { x: 0, y: 0 }
+    : (pf.charging ? { x: inputDir.x * 0.25, y: inputDir.y * 0.25 } : inputDir);
+  const moveDirC = (cf.dashing || cf.staggerT > 0 || cf.aiCharging || cf.snackT > 0) ? { x: 0, y: 0 } : cf.aiMoveDir;
+
+  updateFighter(pf, moveDirP, fighterMaxSpd(pf, MAXSPD));
+  updateFighter(cf, moveDirC, fighterMaxSpd(cf, MAXSPD * 0.9 * (cf.id === 'R' ? state.reubenAggro : 1)));
+
+  emitTrailParticles(pf);
+  emitTrailParticles(cf);
 
   resolveCollision();
+  checkDashContact(stitch);
+  checkDashContact(reuben);
 
   const outChar = checkRingOut();
-  if (outChar) {
-    const winner = outChar === 'S' ? 'R' : 'S';
-    const loser = outChar === 'S' ? stitch : reuben;
-    state.roundWinner = winner;
-    state.wins[winner]++;
-    sfx.outOfRing();
-    burst(loser.x, loser.y, '#f0d998', 18);
+  if (outChar === 'draw') {
+    state.isDraw = true;
+    state.roundWinner = null;
+    sfx.thud();
     state.mode = 'roundEnd';
     state.endT = 0;
-    if (state.wins[winner] >= 2) {
-      state.matchWinner = winner;
-      addRecordResult(winner, true);
-      addRecordResult(winner === 'S' ? 'R' : 'S', false);
-      sfx.matchWin();
-    } else {
-      sfx.roundWin();
-    }
+  } else if (outChar) {
+    triggerRingOut(outChar);
   }
 }
 
@@ -452,6 +778,25 @@ function drawScenery(t) {
   drawPalmCorner(W - 30 * K, H - 6, true);
 }
 
+function drawCrowd(t) {
+  const n = 7;
+  const y = H - 10 * K;
+  const colors = ['#3d7bc9', '#e0b13e', '#5aa85a', '#c76b9e'];
+  for (let i = 0; i < n; i++) {
+    const x = W * 0.08 + i * (W * 0.84 / (n - 1));
+    const jump = state.crowdJumpT > 0
+      ? Math.abs(Math.sin(t / 55 + i)) * 11 * K
+      : Math.abs(Math.sin(t / 500 + i)) * 2 * K;
+    ctx.fillStyle = colors[i % colors.length];
+    ctx.beginPath();
+    ctx.ellipse(x, y - jump, 6 * K, 9 * K, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x, y - jump - 9 * K, 4 * K, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 function drawTikiTorch(x, y, t, seed) {
   // post
   ctx.fillStyle = '#6d4526';
@@ -481,6 +826,7 @@ function drawTikiTorch(x, y, t, seed) {
 }
 
 function drawRing(t) {
+  const effR = getEffRingR();
   // sand pit — richer tan than the surrounding beach so the boundary reads clearly
   ctx.fillStyle = '#d8ae62';
   ctx.beginPath();
@@ -494,11 +840,19 @@ function drawRing(t) {
     ctx.arc(ringCX, ringCY, r, 0, Math.PI * 2);
     ctx.stroke();
   }
-  // thick twisted-rope boundary
+  // tide reclaiming the outer sand once the round timer runs out
+  if (state.shrinking && effR < ringR) {
+    ctx.fillStyle = 'rgba(46,134,201,0.55)';
+    ctx.beginPath();
+    ctx.arc(ringCX, ringCY, ringR, 0, Math.PI * 2);
+    ctx.arc(ringCX, ringCY, effR, 0, Math.PI * 2, true);
+    ctx.fill('evenodd');
+  }
+  // thick twisted-rope boundary — this shrinks with the tide
   ctx.strokeStyle = '#8a5a34';
   ctx.lineWidth = 10 * K;
   ctx.beginPath();
-  ctx.arc(ringCX, ringCY, ringR, 0, Math.PI * 2);
+  ctx.arc(ringCX, ringCY, effR, 0, Math.PI * 2);
   ctx.stroke();
   ctx.strokeStyle = '#caa06b';
   ctx.lineWidth = 4 * K;
@@ -506,10 +860,10 @@ function drawRing(t) {
   for (let i = 0; i < segs; i++) {
     const a0 = (i / segs) * Math.PI * 2, a1 = a0 + (Math.PI * 2 / segs) * 0.5;
     ctx.beginPath();
-    ctx.arc(ringCX, ringCY, ringR, a0, a1);
+    ctx.arc(ringCX, ringCY, effR, a0, a1);
     ctx.stroke();
   }
-  // tiki torches around the ring
+  // tiki torches around the (original, full-size) ring
   const torchN = 4;
   for (let i = 0; i < torchN; i++) {
     const a = (i / torchN) * Math.PI * 2 + Math.PI / 4;
@@ -684,17 +1038,45 @@ function drawReubenTop(f) {
   if (f.armT > 0.02) drawArmPair(r, r * 0.12, f.armT, f.armT, GOLD, DARK);
 }
 
+function drawSnack(f) {
+  // telegraphs Reuben's lazy sandwich break
+  const r = f.bodyR;
+  ctx.fillStyle = '#e8c07a';
+  ctx.fillRect(r * 0.25, -r * 0.6, r * 0.55, r * 0.24);
+  ctx.fillStyle = '#7cb342';
+  ctx.fillRect(r * 0.27, -r * 0.52, r * 0.51, r * 0.06);
+  ctx.fillStyle = '#c0392b';
+  ctx.fillRect(r * 0.27, -r * 0.42, r * 0.51, r * 0.05);
+}
+
 function drawFighterOnRing(f, opp, t) {
-  const ang = Math.atan2(opp.y - f.y, opp.x - f.x);
+  const ang = f.tumbling ? f.tumbleAngle : Math.atan2(opp.y - f.y, opp.x - f.x);
+  const spd = Math.hypot(f.vx, f.vy);
   ctx.save();
   ctx.translate(f.x, f.y);
-  // drop shadow (unrotated, stays under the body)
+  // drop shadow (unrotated, unbobbed, stays anchored to the ground)
   ctx.fillStyle = 'rgba(0,0,0,0.2)';
   ctx.beginPath();
   ctx.ellipse(0, f.bodyR * 0.55, f.bodyR * 1.1, f.bodyR * 0.5, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.rotate(ang);
+  // small hop-bob while moving
+  const bob = f.tumbling ? 0 : Math.sin(t / 110 + (f.id === 'S' ? 0 : Math.PI)) * Math.min(spd * 0.6, 4) * (spd > 0.3 ? 1 : 0.25);
+  ctx.translate(0, -bob);
+  // wind-up wiggle while charging a dash
+  const wiggle = (f.charging && !f.dashing) ? Math.sin(t / 30) * 0.1 * (f.chargeT / DASH_CHARGE_MAX) : 0;
+  ctx.rotate(ang + wiggle);
+  // squash-and-stretch along the velocity axis
+  const velRelAng = spd > 0.4 ? Math.atan2(f.vy, f.vx) - ang - wiggle : 0;
+  const stretch = 1 + Math.min(spd * 0.025, 0.4);
+  const squash = 1 / stretch;
+  ctx.save();
+  ctx.rotate(velRelAng);
+  ctx.scale(stretch, squash);
+  ctx.rotate(-velRelAng);
+  if (f.staggerT > 0) ctx.translate((Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4);
   if (f.id === 'S') drawStitchTop(f); else drawReubenTop(f);
+  if (f.snackT > 0) drawSnack(f);
+  ctx.restore();
   ctx.restore();
 }
 
@@ -704,29 +1086,56 @@ function drawHUD() {
   const pad = Math.max(14, H * 0.02);
   drawNameHUD('S', pad, pad, false);
   drawNameHUD('R', W - pad, pad, true);
+
+  const popScale = 1 + Math.max(0, state.roundPopT) / 40 * 0.6;
+  ctx.save();
+  ctx.translate(W / 2, pad + 34);
+  ctx.scale(popScale, popScale);
   ctx.font = 'bold ' + Math.min(18, W * 0.036) + 'px -apple-system, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   ctx.fillStyle = '#fff';
   ctx.strokeStyle = 'rgba(0,0,0,0.4)';
   ctx.lineWidth = 4;
-  const label = 'Round ' + state.round;
-  ctx.strokeText(label, W / 2, pad + 34);
-  ctx.fillText(label, W / 2, pad + 34);
+  const label = t('roundLabel')(state.round);
+  ctx.strokeText(label, 0, 0);
+  ctx.fillText(label, 0, 0);
+  ctx.restore();
+
+  if (state.mode === 'round') {
+    const remaining = Math.max(0, ROUND_TIME - state.roundT);
+    const secs = Math.ceil(remaining / 60);
+    ctx.font = 'bold ' + Math.min(15, W * 0.03) + 'px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = state.shrinking ? '#ffd94d' : 'rgba(255,255,255,0.85)';
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    ctx.lineWidth = 3;
+    const timerTxt = state.shrinking ? t('tideWarning') : t('timeLeft')(secs);
+    ctx.strokeText(timerTxt, W / 2, pad + 58);
+    ctx.fillText(timerTxt, W / 2, pad + 58);
+  }
 }
 
 function drawNameHUD(c, x, y, alignRight) {
+  const pillW = Math.min(150, W * 0.3), pillH = 46;
+  const px = alignRight ? x - pillW : x;
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(px, y - 6, pillW, pillH, 14); else ctx.rect(px, y - 6, pillW, pillH);
+  ctx.fill();
   ctx.textAlign = alignRight ? 'right' : 'left';
   ctx.textBaseline = 'top';
   ctx.font = 'bold ' + Math.min(16, W * 0.032) + 'px -apple-system, sans-serif';
   ctx.fillStyle = '#fff';
   ctx.strokeStyle = 'rgba(0,0,0,0.4)';
   ctx.lineWidth = 3;
-  const name = c === 'S' ? 'STITCH' : 'REUBEN';
-  ctx.strokeText(name, x, y);
-  ctx.fillText(name, x, y);
+  const name = c === 'S' ? t('stitch') : t('reuben');
+  const tx = alignRight ? x - 10 : x + 10;
+  ctx.strokeText(name, tx, y);
+  ctx.fillText(name, tx, y);
   for (let i = 0; i < 2; i++) {
-    const dx = alignRight ? x - 10 - i * 18 : x + 10 + i * 18;
+    const dx = alignRight ? tx - 10 - i * 18 : tx + 10 + i * 18;
     ctx.beginPath();
     ctx.arc(dx, y + 28, 6, 0, Math.PI * 2);
     ctx.fillStyle = i < state.wins[c] ? (c === 'S' ? '#3d7bc9' : '#e0b13e') : 'rgba(255,255,255,0.3)';
@@ -750,7 +1159,7 @@ function drawJoystick() {
   ctx.stroke();
   ctx.beginPath();
   ctx.arc(cx + joyKnobOffset.x, cy + joyKnobOffset.y, 22, 0, Math.PI * 2);
-  ctx.fillStyle = joyActive ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.4)';
+  ctx.fillStyle = joyChargeArmed ? 'rgba(255,214,102,0.7)' : (joyActive ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.4)');
   ctx.fill();
   ctx.strokeStyle = 'rgba(255,255,255,0.7)';
   ctx.lineWidth = 2;
@@ -768,10 +1177,10 @@ function drawOverlays(t) {
     const big = Math.min(46, W * 0.08);
     ctx.font = 'bold ' + big + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#ffd700';
-    ctx.fillText('🌺 OHANA SUMO', W / 2, H * 0.12);
+    ctx.fillText(t('title'), W / 2, H * 0.12);
     ctx.font = 'bold ' + Math.min(20, W * 0.038) + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#fff';
-    ctx.fillText("Who's fighting today? Tap a fighter!", W / 2, H * 0.19);
+    ctx.fillText(t('selectPrompt'), W / 2, H * 0.19);
     for (const [i, c] of [[0, 'S'], [1, 'R']]) {
       const cx = W * (i === 0 ? 0.3 : 0.7), cy = H * 0.5;
       ctx.fillStyle = state.sel === i ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.18)';
@@ -786,18 +1195,18 @@ function drawOverlays(t) {
       ctx.restore();
       ctx.font = 'bold ' + Math.min(22, W * 0.042) + 'px -apple-system, sans-serif';
       ctx.fillStyle = '#fff';
-      ctx.fillText(c === 'S' ? 'STITCH' : 'REUBEN', cx, cy + rh / 2 - 46);
+      ctx.fillText(c === 'S' ? t('stitch') : t('reuben'), cx, cy + rh / 2 - 46);
       const rec = getRecord(c);
       ctx.font = '13px -apple-system, sans-serif';
       ctx.fillStyle = '#ffe066';
-      ctx.fillText('wins: ' + rec.w + '  losses: ' + rec.l, cx, cy + rh / 2 - 22);
+      ctx.fillText(t('winsLosses')(rec.w, rec.l), cx, cy + rh / 2 - 22);
     }
     ctx.font = '14px -apple-system, sans-serif';
     ctx.fillStyle = '#dce9f5';
-    ctx.fillText('⌨  1 = Stitch · 2 = Reuben · Enter to fight!', W / 2, H * 0.9);
+    ctx.fillText(t('controlsHint'), W / 2, H * 0.9);
   } else if (state.mode === 'count') {
     const stage = Math.floor(state.countT / 45);
-    const txt = stage < 3 ? String(3 - stage) : 'HAJIME!';
+    const txt = stage < 3 ? String(3 - stage) : t('hajime');
     ctx.font = 'bold ' + Math.min(100, W * 0.18) + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#fff';
     ctx.strokeStyle = 'rgba(0,0,0,0.4)';
@@ -810,32 +1219,42 @@ function drawOverlays(t) {
     const big = Math.min(48, W * 0.09);
     ctx.font = 'bold ' + big + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#ffd700';
-    const name = state.roundWinner === 'S' ? 'STITCH' : 'REUBEN';
-    ctx.fillText(name + ' wins the round!', W / 2, H * 0.42);
-    ctx.font = 'bold ' + Math.min(24, W * 0.045) + 'px -apple-system, sans-serif';
-    ctx.fillStyle = '#fff';
-    ctx.fillText(state.wins.S + ' - ' + state.wins.R, W / 2, H * 0.54);
+    if (state.isDraw) {
+      ctx.fillText(t('draw'), W / 2, H * 0.42);
+    } else {
+      const name = state.roundWinner === 'S' ? t('stitch') : t('reuben');
+      ctx.fillText(t('roundWins')(name), W / 2, H * 0.42);
+      ctx.font = 'bold ' + Math.min(24, W * 0.045) + 'px -apple-system, sans-serif';
+      ctx.fillStyle = '#fff';
+      ctx.fillText(state.wins.S + ' - ' + state.wins.R, W / 2, H * 0.54);
+    }
   } else if (state.mode === 'finish') {
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.fillRect(0, 0, W, H);
     const big = Math.min(52, W * 0.09);
     ctx.font = 'bold ' + big + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#ffd700';
-    const name = state.matchWinner === 'S' ? 'STITCH' : 'REUBEN';
-    ctx.fillText('🏆 ' + name + ' WINS!', W / 2, H * 0.36);
+    const name = state.matchWinner === 'S' ? t('stitch') : t('reuben');
+    ctx.fillText(t('matchWins')(name), W / 2, H * 0.36);
     ctx.font = 'bold ' + Math.min(26, W * 0.05) + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#fff';
-    ctx.fillText('Final score: ' + state.wins.S + ' - ' + state.wins.R, W / 2, H * 0.48);
+    ctx.fillText(t('finalScore')(state.wins.S, state.wins.R), W / 2, H * 0.48);
     ctx.font = '17px -apple-system, sans-serif';
     ctx.fillStyle = '#ffe066';
-    ctx.fillText('Tap to play again', W / 2, H * 0.6);
+    ctx.fillText(t('tapAgain'), W / 2, H * 0.6);
   }
 }
 
 // ============ DRAWING ============
 function draw() {
   const t = Date.now();
+  ctx.save();
+  if (state.shakeT > 0) {
+    const p = state.shakeT / 18;
+    ctx.translate((Math.random() - 0.5) * state.shakeMag * p, (Math.random() - 0.5) * state.shakeMag * p);
+  }
   drawScenery(t);
+  drawCrowd(t);
   drawRing(t);
   if (state.mode !== 'select') {
     const order = [stitch, reuben].sort((a, b) => a.y - b.y);
@@ -850,6 +1269,7 @@ function draw() {
       ctx.globalAlpha = 1;
     }
   }
+  ctx.restore();
   drawHUD();
   drawJoystick();
   drawOverlays(t);

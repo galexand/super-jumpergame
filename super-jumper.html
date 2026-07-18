@@ -142,6 +142,81 @@
 <script>
 'use strict';
 
+// ============ I18N ============
+let LANG = 'en';
+try { LANG = localStorage.getItem('ohanaLang') === 'ro' ? 'ro' : 'en'; } catch (e) {}
+const T = {
+  en: {
+    title: 'SUPER JUMPER',
+    tapToStart: 'Tap anywhere to start!',
+    hintsTouch: '◀ ▶ run  ·  ⬆ jump  ·  🌍 switch world  ·  stomp baddies  ·  reach the house!',
+    hintsKeys: '⌨  arrows / A D run  ·  SPACE jump  ·  F fire  ·  N next world  ·  P pause',
+    highScores: '🏆 HIGH SCORES 🏆',
+    paused: '⏸ PAUSED',
+    pausedHint: 'Press P or tap the screen to continue',
+    amnesio: '🌀 Amnesio!',
+    amnesioHint: 'Stitch forgot everything… back to World 3!',
+    ouch: 'Ouch!',
+    tryAgain: 'Try again — you can do it!',
+    levelClear: 'LEVEL CLEAR! ⭐',
+    gameOver: 'Game Over',
+    score: 'Score: ',
+    tapToPlayAgain: 'Tap to play again!',
+    youWin: '🏆 YOU WIN! 🏆',
+    scoreCoins: (s, c) => 'Score: ' + s + '   Coins: ' + c,
+    ceremony1: '👀 Something is landing…',
+    ceremony2: 'The Grand Councilwoman has arrived!',
+    ceremony3: '🏅 A Golden Medal for Lilo & Stitch!',
+    world: 'WORLD',
+    checkpoint: 'Checkpoint!',
+    highScoresTitle: '🏆 High Scores',
+    yourScore: (s, c) => 'Your score: ' + s + '  ·  coins: ' + c,
+    namePlaceholder: 'Type your name',
+    save: 'Save',
+    playAgain: 'Play again!',
+    noScores: 'No scores yet — be the first!',
+    homeLink: '← Games',
+    worlds: ['Kokaua Town', "Lilo's Backyard", 'Hawaiian Reef', 'Sunny Shoreline',
+             'Pier Playground', 'Beach Bluffs', "Babyfier's Trail", "Amnesio's Ruins",
+             "Sample's Crater", "Fibber's Wasteland", "Lilo's House", "Stitch's School"],
+  },
+  ro: {
+    title: 'SUPER JUMPER',
+    tapToStart: 'Atinge ecranul pentru a începe!',
+    hintsTouch: '◀ ▶ aleargă  ·  ⬆ sari  ·  🌍 schimbă lumea  ·  calcă răufăcătorii  ·  ajungi la casă!',
+    hintsKeys: '⌨  săgeți / A D aleargă  ·  SPAȚIU sari  ·  F trage  ·  N lumea următoare  ·  P pauză',
+    highScores: '🏆 CELE MAI BUNE SCORURI 🏆',
+    paused: '⏸ PAUZĂ',
+    pausedHint: 'Apasă P sau atinge ecranul pentru a continua',
+    amnesio: '🌀 Amnesio!',
+    amnesioHint: 'Stitch a uitat tot… înapoi în Lumea 3!',
+    ouch: 'Au!',
+    tryAgain: 'Încearcă din nou — poți reuși!',
+    levelClear: 'NIVEL TERMINAT! ⭐',
+    gameOver: 'Joc Terminat',
+    score: 'Scor: ',
+    tapToPlayAgain: 'Atinge pentru a juca din nou!',
+    youWin: '🏆 AI CÂȘTIGAT! 🏆',
+    scoreCoins: (s, c) => 'Scor: ' + s + '   Monede: ' + c,
+    ceremony1: '👀 Ceva aterizează…',
+    ceremony2: 'Marea Consilieră a sosit!',
+    ceremony3: '🏅 O Medalie de Aur pentru Lilo & Stitch!',
+    world: 'LUMEA',
+    checkpoint: 'Punct de salvare!',
+    highScoresTitle: '🏆 Cele mai bune scoruri',
+    yourScore: (s, c) => 'Scorul tău: ' + s + '  ·  monede: ' + c,
+    namePlaceholder: 'Scrie-ți numele',
+    save: 'Salvează',
+    playAgain: 'Joacă din nou!',
+    noScores: 'Niciun scor încă — fii primul!',
+    homeLink: '← Jocuri',
+    worlds: ['Orașul Kokaua', 'Curtea lui Lilo', 'Reciful Hawaiian', 'Țărmul Însorit',
+             'Locul de Joacă din Debarcader', 'Stâncile Plajei', 'Poteca lui Babyfier',
+             'Ruinele lui Amnesio', 'Craterul lui Sample', 'Pustietatea lui Fibber',
+             'Casa lui Lilo', 'Școala lui Stitch'],
+  },
+};
+
 // ============ SETUP ============
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -323,7 +398,7 @@ const LEVELS = [
   '            oo                 ooo                                  ooo',
   '           ====               =====              W         ====   =====',
   '                        M',
-  '   P      H     R      B        G     1      R     T       0     G      R     B       G      F',
+  '   P      H     R      B        G     1  3   R     T   2   0     G      R     B       G      F',
   '  ==========================  ====================================================   ===============',
   '  ==========================  ====================================================   ===============',
 ],
@@ -351,10 +426,20 @@ const state = {
   modeTimer: 0,
 };
 
-let tiles = [], levelW = 0, levelH = 0;
+let tiles = [], levelW = 0, levelH = 0, levelFlagX = -1;
 let coinsList = [], enemies = [], particles = [], bumps = [], mushrooms = [], friends = [], sandwiches = [];
 let guns = [], bolts = [], rideShips = [];
 let camX = 0;
+let floaters = []; // little "+100"/"+1 ❤" text pop-ups
+let shakeT = 0; // frames of camera shake left
+let checkpointX = -1, checkpointY = -1; // mid-level respawn point (World 9+)
+let checkpointReached = false; // stays true across a retry of the same level, reset on level change
+let worldBannerT = 0; // world-intro banner fade timer
+let heartFlashT = 0; // lost heart flashes red briefly before greying out
+function spawnFloater(x, y, text, color) {
+  floaters.push({ x, y, text, color, life: 50 });
+}
+function shakeScreen(frames) { shakeT = Math.max(shakeT, frames); }
 
 const player = {
   x: 0, y: 0, vx: 0, vy: 0,
@@ -394,7 +479,7 @@ function stretchMap(map, factor) {
   }
   if (!best) return map;
   // one-of-a-kind letters (friends, ship, pistols) don't get cloned
-  const chunk = rows.map(r => r.slice(best.s, b).replace(/[LNDKAJSW]/g, ' '));
+  const chunk = rows.map(r => r.slice(best.s, b).replace(/[LNDKAJSW0123T]/g, ' '));
   return rows.map((r, y) => r.slice(0, b) + chunk[y].repeat(best.t) + r.slice(b));
 }
 
@@ -403,6 +488,7 @@ function loadLevel(n) {
   const map = stretchMap(LEVELS[n], factor);
   levelH = map.length;
   levelW = Math.max(...map.map(r => r.length));
+  levelFlagX = -1;
   tiles = [];
   coinsList = [];
   enemies = [];
@@ -417,17 +503,18 @@ function loadLevel(n) {
   player.flying = false; // the spacecraft stays behind between levels
   player.hyper = 0;       // Sample's curse wears off between levels
   player.sleep = 0;       // and Stitch wakes up
+  player.landSquash = 0;
   for (let y = 0; y < levelH; y++) {
     tiles[y] = [];
     for (let x = 0; x < levelW; x++) {
       const c = map[y][x] || ' ';
       tiles[y][x] = ' ';
       if (c === '=' || c === '?' || c === 'M') tiles[y][x] = c;
-      else if (c === 'F') tiles[y][x] = 'F';
+      else if (c === 'F') { tiles[y][x] = 'F'; levelFlagX = x * TILE; }
       else if (c === 'o') coinsList.push({ x, y, taken: false, phase: Math.random() * 6 });
-      else if ('EGHRB1320T'.includes(c)) {
-        // G bruiser, H/E hamster, R red clone, B sandwich-thrower, digits = experiments
-        const kind = c === 'E' ? 'H' : c;
+      else if ('GHRB1320T'.includes(c)) {
+        // G bruiser, H hamster, R red clone, B sandwich-thrower, digits = experiments
+        const kind = c;
         const SPEC = {
           G: { w: 0.9,  h: 1.0,  vx: -0.9 },
           H: { w: 0.7,  h: 0.62, vx: -1.6 },
@@ -472,8 +559,30 @@ function loadLevel(n) {
       else if (c === 'P') { player.x = x * TILE; player.y = y * TILE; }
     }
   }
+  // mid-level checkpoint (World 9+, stretched adventures): a torch near the 50% mark
+  checkpointX = -1; checkpointY = -1;
+  if (n >= 8) {
+    const midCol = Math.floor(levelW * 0.5);
+    for (let d = 0; d < levelW * 0.3 && checkpointX < 0; d++) {
+      for (const cx of [midCol + d, midCol - d]) {
+        if (cx <= 1 || cx >= levelW - 1) continue;
+        const gy = levelH - 2;
+        if (tiles[gy] && tiles[gy][cx] === '=' &&
+            tiles[gy - 1] && tiles[gy - 1][cx] === ' ' &&
+            tiles[gy - 2] && tiles[gy - 2][cx] === ' ') {
+          checkpointX = cx * TILE + TILE * 0.1;
+          checkpointY = gy * TILE - TILE * 0.8;
+          break;
+        }
+      }
+    }
+  }
+  if (checkpointReached && checkpointX >= 0) { player.x = checkpointX; player.y = checkpointY; }
   player.vx = 0; player.vy = 0; player.invuln = 0;
-  camX = 0;
+  camX = Math.max(0, Math.min(player.x - (W / SCALE) * 0.4, levelW * TILE - W / SCALE));
+  floaters = [];
+  shakeT = 0;
+  worldBannerT = 90;
 }
 
 // ============ INPUT ============
@@ -482,6 +591,8 @@ let jumpPressed = false; // edge trigger
 
 function setKey(k, v) {
   if (k === 'jump' && v && !keys.jump) jumpPressed = true;
+  // mashing buttons wakes a sleeping Stitch up faster — fun for kids
+  if (v && !keys[k] && player.sleep > 0) player.sleep = Math.max(0, player.sleep - 10);
   keys[k] = v;
 }
 
@@ -525,6 +636,7 @@ const btnFireEl = document.getElementById('btnFire');
 function nextWorld() {
   if (state.mode !== 'play' && state.mode !== 'paused') return;
   state.level = (state.level + 1) % LEVELS.length;
+  checkpointReached = false;
   loadLevel(state.level);
   state.mode = 'play';
   sfx.aloha();
@@ -543,6 +655,7 @@ function handleTap() {
     setSize(false);
     player.fast = false; player.surf = false; player.magnet = false; player.shield = false;
     player.gun = false; player.fireCD = 0;
+    checkpointReached = false;
     loadLevel(0);
     state.mode = 'play';
   } else if (state.mode === 'ending') {
@@ -569,6 +682,13 @@ const scoreListEl = document.getElementById('scoreList');
 let scoreSaved = false;
 let scoresCache = null;
 
+// route static DOM chrome through the language strings
+document.getElementById('homeLink').textContent = T[LANG].homeLink;
+document.getElementById('scoresTitle').textContent = T[LANG].highScoresTitle;
+document.getElementById('saveBtn').textContent = T[LANG].save;
+document.getElementById('againBtn').textContent = T[LANG].playAgain;
+nameInputEl.placeholder = T[LANG].namePlaceholder;
+
 function loadScores() {
   if (scoresCache) return scoresCache;
   try { scoresCache = JSON.parse(localStorage.getItem(SCORES_KEY)) || []; }
@@ -580,7 +700,7 @@ function renderScoreList(highlight) {
   const scores = loadScores();
   scoreListEl.innerHTML = '';
   if (!scores.length) {
-    scoreListEl.innerHTML = '<li><span class="nm">No scores yet — be the first!</span></li>';
+    scoreListEl.innerHTML = '<li><span class="nm">' + T[LANG].noScores + '</span></li>';
     return;
   }
   scores.forEach((s, i) => {
@@ -596,9 +716,11 @@ function renderScoreList(highlight) {
 function showScoreOverlay() {
   if (state.mode !== 'gameover' && state.mode !== 'win') return;
   scoresEl.style.display = 'flex';
-  document.getElementById('scoresSub').textContent = 'Your score: ' + state.score + '  ·  coins: ' + state.coins;
+  document.getElementById('scoresSub').textContent = T[LANG].yourScore(state.score, state.coins);
   nameRowEl.style.display = scoreSaved ? 'none' : 'flex';
-  nameInputEl.value = localStorage.getItem(NAME_KEY) || '';
+  let savedName = '';
+  try { savedName = localStorage.getItem(NAME_KEY) || ''; } catch (e) {}
+  nameInputEl.value = savedName;
   renderScoreList(-1);
 }
 
@@ -649,6 +771,17 @@ function tileAt(px, py) {
   const tx = Math.floor(px / TILE), ty = Math.floor(py / TILE);
   if (ty < 0 || tx < 0 || tx >= levelW || ty >= levelH) return ' ';
   return tiles[ty][tx];
+}
+
+function rectHitsSolid(x, y, w, h) {
+  const step = TILE * 0.4;
+  for (let ty = y + 1; ty < y + h - 1; ty += step) {
+    if (solidAt(x + 1, ty) || solidAt(x + w - 1, ty)) return true;
+  }
+  for (let tx = x + 1; tx < x + w - 1; tx += step) {
+    if (solidAt(tx, y + 1) || solidAt(tx, y + h - 1)) return true;
+  }
+  return solidAt(x + w - 1, y + h - 1);
 }
 
 function moveEntity(e) {
@@ -716,10 +849,31 @@ function hitBlockAbove(ty) {
 
 function setSize(big) {
   const feet = player.y + player.h;
-  player.big = big;
-  player.w = big ? TILE * 0.8 : TILE * 0.62;
-  player.h = big ? TILE * 1.04 : TILE * 0.8;
-  player.y = feet - player.h;
+  if (!big) {
+    player.big = false;
+    player.w = TILE * 0.62;
+    player.h = TILE * 0.8;
+    player.y = feet - player.h;
+    return;
+  }
+  // growing can clip Stitch into tiles above/beside him — nudge him free, or refuse to grow
+  const newW = TILE * 0.8, newH = TILE * 1.04;
+  const newY = feet - newH;
+  const tries = [
+    { x: player.x, y: newY },               // as-is
+    { x: player.x, y: newY + TILE * 0.24 }, // nudge down
+    { x: player.x - TILE * 0.2, y: newY },  // nudge left
+    { x: player.x + TILE * 0.2, y: newY },  // nudge right
+  ];
+  for (const t of tries) {
+    if (!rectHitsSolid(t.x, t.y, newW, newH)) {
+      player.big = true;
+      player.w = newW; player.h = newH;
+      player.x = t.x; player.y = t.y;
+      return;
+    }
+  }
+  // no room to grow safely — stay small this time, power isn't lost
 }
 
 function crashShip() {
@@ -727,6 +881,7 @@ function crashShip() {
   player.flying = false;
   player.invuln = 90;
   sfx.hurt();
+  shakeScreen(8);
   spawnParticles(player.x + player.w / 2, player.y + player.h, '#9aa7c7', 14);
 }
 
@@ -739,6 +894,7 @@ function applyExperimentHit(kind) {
     setSize(false);
     player.flying = false;
     state.level = 2;
+    checkpointReached = false;
     loadLevel(2);
     player.invuln = 120;
     state.mode = 'amnesia';
@@ -759,6 +915,7 @@ function applyExperimentHit(kind) {
       return;
     }
     state.lives--;
+    heartFlashT = 24;
     killPlayer();
   }
 }
@@ -820,7 +977,7 @@ function update() {
       } else {
         state.level++;
         if (state.level >= LEVELS.length) { state.mode = 'win'; onRunEnd(); }
-        else { loadLevel(state.level); state.mode = 'play'; }
+        else { checkpointReached = false; loadLevel(state.level); state.mode = 'play'; }
       }
     }
     return;
@@ -865,14 +1022,31 @@ function update() {
     if (!keys.jump && player.vy < -5) player.vy = -5;
   }
 
+  const wasOnGround = player.onGround, preLandVy = player.vy;
   const headHit = moveEntity(player);
   if (headHit >= 0) hitBlockAbove(headHit);
+
+  // landing squash + a little puff of dust after a real fall
+  if (!player.flying && !wasOnGround && player.onGround && preLandVy > 6) {
+    player.landSquash = Math.min(10, preLandVy * 0.6);
+    const n = Math.min(8, 3 + Math.floor(preLandVy));
+    for (let i = 0; i < n; i++) {
+      particles.push({
+        x: player.x + player.w / 2 + (Math.random() - 0.5) * player.w,
+        y: player.y + player.h - 2,
+        vx: (Math.random() - 0.5) * 3, vy: -Math.random() * 1.5,
+        life: 18 + Math.random() * 10, color: '#c9c2b2',
+      });
+    }
+  }
+  if (player.landSquash > 0) player.landSquash -= 1.4;
 
   if (player.invuln > 0) player.invuln--;
   if (player.hyper > 0) player.hyper--;
   if (player.sleep > 0) {
     player.sleep--;
     player.invuln = Math.max(player.invuln, 2); // nobody bothers a sleeping Stitch
+    if (player.sleep === 0) player.invuln = 90; // waking-up grace so Mertle can't instantly re-sleep him
   }
   if (Math.abs(player.vx) > 0.5 && player.onGround) player.runFrame += Math.abs(player.vx) * 0.06;
 
@@ -950,9 +1124,11 @@ function update() {
             en.shell = true; en.shellTimer = 300; en.dir = Math.sign(en.vx) || -1; en.vx = 0;
             state.score += 100;
           } else {
-            en.alive = false;
-            en.squash = 0;
+            // zapped, not stomped: puff of sparks and gone — no squashed pose
             state.score += { G: 500, R: 300, B: 250, '0': 400, '3': 350, '2': 350 }[en.kind] || 200;
+            spawnParticles(en.x + en.w / 2, en.y + en.h / 2, '#7dff8a', 10);
+            const idx = enemies.indexOf(en);
+            if (idx >= 0) enemies.splice(idx, 1);
           }
           sfx.zap();
           spawnParticles(b.x, b.y, '#7dff8a', 8);
@@ -986,8 +1162,9 @@ function update() {
   // fell off the world
   if (player.y > levelH * TILE + TILE * 3) killPlayer();
 
-  // keep inside level bounds on the left
+  // keep inside level bounds on the left and right
   if (player.x < 0) { player.x = 0; player.vx = 0; }
+  if (player.x + player.w > levelW * TILE) { player.x = levelW * TILE - player.w; player.vx = 0; }
 
   // --- coins ---
   for (const c of coinsList) {
@@ -1012,7 +1189,23 @@ function update() {
       state.score += 50;
       sfx.coin();
       spawnParticles(cx, cy, '#ffd700', 6);
+      // every 100 coins buys Stitch an extra heart, up to the current max
+      if (state.coins % 100 === 0 && state.lives < state.maxLives) {
+        state.lives++;
+        sfx.powerup();
+        spawnFloater(cx, cy - 18, '+1 ❤', '#ff4d6d');
+      }
     }
+  }
+
+  // --- mid-level checkpoint ---
+  if (!checkpointReached && checkpointX >= 0 &&
+      player.x + player.w > checkpointX - 4 && player.x < checkpointX + TILE + 4 &&
+      player.y + player.h > checkpointY - TILE * 2) {
+    checkpointReached = true;
+    sfx.aloha();
+    spawnFloater(checkpointX + TILE / 2, checkpointY - 10, T[LANG].checkpoint, '#ffd700');
+    spawnParticles(checkpointX + TILE / 2, checkpointY, '#ffd700', 10);
   }
 
   // --- enemies ---
@@ -1136,8 +1329,11 @@ function update() {
           en.alive = false;
           en.squash = 0;
           player.vy = -8;
-          state.score += { G: 500, R: 300, B: 250, '0': 400, '3': 350, '2': 350 }[en.kind] || 200;
+          const gain = { G: 500, R: 300, B: 250, '0': 400, '3': 350, '2': 350 }[en.kind] || 200;
+          state.score += gain;
           sfx.stomp();
+          shakeScreen(8);
+          spawnFloater(en.x + en.w / 2, en.y - 6, '+' + gain, '#ffd700');
           spawnParticles(en.x + en.w / 2, en.y,
             { G: '#8296ab', R: '#e05252', B: '#e8c66a', '1': '#f2a0c0', '3': '#6db8ff', '2': '#c77dff', '0': '#ff5555' }[en.kind] || '#f0f0f0', 8);
         }
@@ -1145,8 +1341,8 @@ function update() {
         if (en.friendly) {
           // good guys don't hurt — walk right past them
         } else if (en.kind === 'T') {
-          // Mertle's scream knocks Stitch asleep for 10 seconds
-          player.sleep = 600;
+          // Mertle's scream knocks Stitch asleep for 5 seconds
+          player.sleep = 300;
           player.vx = 0;
           en.scream = 45;
           en.screamT = 220;
@@ -1239,8 +1435,9 @@ function update() {
   }
 
   // --- flag / level end ---
-  const midX = player.x + player.w / 2, midY = player.y + player.h / 2;
-  if (tileAt(midX, midY) === 'F' || tileAt(midX, midY + player.h / 2 - 2) === 'F') {
+  // any y counts once Stitch reaches the flag's column, so jumping over the
+  // house doesn't send him falling to his doom past the goal
+  if (levelFlagX >= 0 && player.x + player.w > levelFlagX && player.x < levelFlagX + TILE) {
     state.score += 1000;
     if (state.level === LEVELS.length - 1) {
       // the grand finale: the Council arrives to honor Lilo & Stitch
@@ -1266,6 +1463,15 @@ function update() {
     bumps[i].t++;
     if (bumps[i].t > 14) bumps.splice(i, 1);
   }
+  for (let i = floaters.length - 1; i >= 0; i--) {
+    const f = floaters[i];
+    f.y -= 0.6;
+    f.life--;
+    if (f.life <= 0) floaters.splice(i, 1);
+  }
+  if (shakeT > 0) shakeT--;
+  if (heartFlashT > 0) heartFlashT--;
+  if (worldBannerT > 0) worldBannerT--;
 
   // --- camera ---
   const viewW = W / SCALE;
@@ -1280,6 +1486,7 @@ function killPlayer() {
   player.flying = false;
   player.hyper = 0;
   state.lives--;
+  heartFlashT = 24;
   state.mode = 'dead';
   state.modeTimer = 80;
   sfx.hurt();
@@ -1323,6 +1530,9 @@ function draw() {
 
   ctx.save();
   ctx.scale(SCALE, SCALE);
+  if (shakeT > 0) {
+    ctx.translate((Math.random() - 0.5) * (shakeT / 8) * 3, (Math.random() - 0.5) * (shakeT / 8) * 3);
+  }
   const groundY = (levelH - 2) * TILE;
   const span = levelW * TILE + 800;
   const wrap = (v) => ((v % span) + span) % span - 200;
@@ -1598,6 +1808,9 @@ function draw() {
     }
   }
 
+  // mid-level checkpoint torch
+  if (checkpointX >= 0) drawCheckpoint(checkpointX, checkpointY, checkpointReached);
+
   // coins
   for (const c of coinsList) {
     if (c.taken) continue;
@@ -1692,10 +1905,22 @@ function draw() {
     ctx.globalAlpha = 1;
   }
 
+  // floating "+100"/"+1 ❤" pop-ups
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 15px -apple-system, sans-serif';
+  for (const f of floaters) {
+    ctx.globalAlpha = Math.min(1, f.life / 20);
+    ctx.fillStyle = f.color;
+    ctx.fillText(f.text, f.x, f.y);
+    ctx.globalAlpha = 1;
+  }
+
   ctx.restore();
 
   drawHUD();
   drawOverlays();
+  drawWorldBanner();
 }
 
 function drawPalm(x, gy, s) {
@@ -1886,6 +2111,47 @@ function drawPanini(m) {
   ctx.arc(m.x + m.w / 2 - 4, m.y + m.h * 0.62, 1.8, 0, Math.PI * 2);
   ctx.arc(m.x + m.w / 2 + 4, m.y + m.h * 0.62, 1.8, 0, Math.PI * 2);
   ctx.fill();
+}
+
+function drawCheckpoint(px, py, lit) {
+  // a little tiki torch marking the mid-level respawn point
+  const cx = px + TILE * 0.4, baseY = py + TILE * 0.8;
+  ctx.save();
+  ctx.fillStyle = '#7a5230';
+  ctx.fillRect(cx - 3, baseY - 46, 6, 46);
+  ctx.fillStyle = '#5a3d24';
+  ctx.beginPath();
+  ctx.moveTo(cx - 12, baseY - 40);
+  ctx.lineTo(cx + 12, baseY - 40);
+  ctx.lineTo(cx + 7, baseY - 54);
+  ctx.lineTo(cx - 7, baseY - 54);
+  ctx.closePath();
+  ctx.fill();
+  if (lit) {
+    const t = Date.now() / 90;
+    const flick = 1 + Math.sin(t) * 0.15;
+    const grad = ctx.createRadialGradient(cx, baseY - 62, 2, cx, baseY - 62, 16 * flick);
+    grad.addColorStop(0, 'rgba(255,220,120,0.9)');
+    grad.addColorStop(1, 'rgba(255,140,40,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(cx, baseY - 62, 16 * flick, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffb347';
+    ctx.beginPath();
+    ctx.ellipse(cx, baseY - 60, 6 * flick, 10 * flick, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fff3c4';
+    ctx.beginPath();
+    ctx.ellipse(cx, baseY - 62, 3, 5 * flick, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.fillStyle = 'rgba(120,120,120,0.5)';
+    ctx.beginPath();
+    ctx.ellipse(cx, baseY - 58, 5, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 function drawFlag(px, py) {
@@ -3020,7 +3286,8 @@ function drawPlayer() {
     ctx.translate(-cx, 0);
   }
   ctx.translate(cx, feetY);
-  ctx.scale(s, s);
+  const landSq = Math.max(0, player.landSquash || 0) / 10;
+  ctx.scale(s * (1 + landSq * 0.18), s * (1 - landSq * 0.24));
   ctx.translate(-cx, -feetY);
   const bob = player.onGround && Math.abs(player.vx) > 0.5 ? Math.sin(player.runFrame * 4) * 2 : 0;
   const jumpStretch = !player.onGround ? Math.min(4, Math.abs(player.vy) * 0.3) : 0;
@@ -3170,7 +3437,8 @@ function drawLiloPlayer() {
     ctx.translate(-cx, 0);
   }
   ctx.translate(cx, feetY);
-  ctx.scale(s, s);
+  const landSq = Math.max(0, player.landSquash || 0) / 10;
+  ctx.scale(s * (1 + landSq * 0.18), s * (1 - landSq * 0.24));
   ctx.translate(-cx, -feetY);
   const bob = player.onGround && Math.abs(player.vx) > 0.5 ? Math.sin(player.runFrame * 4) * 2 : 0;
   const jumpStretch = !player.onGround ? Math.min(4, Math.abs(player.vy) * 0.3) : 0;
@@ -3524,7 +3792,12 @@ function drawHUD() {
   const pad = Math.max(14, H * 0.02);
   // hearts (Nani can raise the maximum to 5)
   for (let i = 0; i < state.maxLives; i++) {
-    ctx.fillStyle = i < state.lives ? '#ff4d6d' : 'rgba(0,0,0,0.25)';
+    if (i === state.lives && heartFlashT > 0) {
+      // the just-lost heart flashes before settling to grey
+      ctx.fillStyle = Math.floor(heartFlashT / 4) % 2 === 0 ? '#fff' : '#ff4d6d';
+    } else {
+      ctx.fillStyle = i < state.lives ? '#ff4d6d' : 'rgba(0,0,0,0.25)';
+    }
     drawHeart(pad + i * 32, pad + 4, 12);
   }
   // coin count
@@ -3543,7 +3816,7 @@ function drawHUD() {
   ctx.fillText('× ' + state.coins, coinX + 18, pad + 2);
   // score + level (+ speed boost indicator)
   ctx.textAlign = 'right';
-  const label = (player.sleep > 0 ? '💤 ' : '') + (player.hyper > 0 ? '🎵 ' : '') + (player.fast ? '⚡ ' : '') + 'WORLD ' + (state.level + 1) + '   ★ ' + state.score;
+  const label = (player.sleep > 0 ? '💤 ' : '') + (player.hyper > 0 ? '🎵 ' : '') + (player.fast ? '⚡ ' : '') + T[LANG].world + ' ' + (state.level + 1) + '   ★ ' + state.score;
   ctx.strokeText(label, W - pad, pad + 2);
   ctx.fillText(label, W - pad, pad + 2);
 }
@@ -3570,9 +3843,9 @@ function drawOverlays() {
     ctx.fillStyle = '#fff';
     ctx.strokeStyle = 'rgba(0,0,0,0.5)';
     ctx.lineWidth = 4;
-    const msg = t < 150 ? '👀 Something is landing…'
-      : t < 320 ? 'The Grand Councilwoman has arrived!'
-      : '🏅 A Golden Medal for Lilo & Stitch!';
+    const msg = t < 150 ? T[LANG].ceremony1
+      : t < 320 ? T[LANG].ceremony2
+      : T[LANG].ceremony3;
     ctx.strokeText(msg, W / 2, H * 0.1);
     ctx.fillText(msg, W / 2, H * 0.1);
     return;
@@ -3592,21 +3865,21 @@ function drawOverlays() {
   if (state.mode === 'title') {
     ctx.font = 'bold ' + big + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#ffd700';
-    ctx.fillText('SUPER JUMPER', W / 2, y0);
+    ctx.fillText(T[LANG].title, W / 2, y0);
     ctx.fillStyle = '#fff';
     ctx.font = 'bold ' + small + 'px -apple-system, sans-serif';
-    ctx.fillText('Tap anywhere to start!', W / 2, line1);
+    ctx.fillText(T[LANG].tapToStart, W / 2, line1);
     ctx.font = small * 0.8 + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#bbb';
-    ctx.fillText('◀ ▶ run  ·  ⬆ jump  ·  🌍 switch world  ·  stomp baddies  ·  reach the house!', W / 2, line2);
+    ctx.fillText(T[LANG].hintsTouch, W / 2, line2);
     ctx.font = small * 0.75 + 'px -apple-system, sans-serif';
-    ctx.fillText('⌨  arrows / A D run  ·  SPACE jump  ·  F fire  ·  N next world  ·  P pause', W / 2, line2 + small * 1.3);
+    ctx.fillText(T[LANG].hintsKeys, W / 2, line2 + small * 1.3);
     // top-3 leaderboard
     const best = loadScores();
     if (best.length) {
       ctx.font = 'bold ' + small * 0.9 + 'px -apple-system, sans-serif';
       ctx.fillStyle = '#ffd700';
-      ctx.fillText('🏆 HIGH SCORES 🏆', W / 2, line2 + small * 3);
+      ctx.fillText(T[LANG].highScores, W / 2, line2 + small * 3);
       ctx.fillStyle = '#fff';
       for (let i = 0; i < Math.min(3, best.length); i++) {
         ctx.fillText((i + 1) + '.  ' + best[i].name + '  —  ' + best[i].score, W / 2, line2 + small * (4.4 + i * 1.4));
@@ -3614,42 +3887,62 @@ function drawOverlays() {
     }
   } else if (state.mode === 'paused') {
     ctx.font = 'bold ' + big + 'px -apple-system, sans-serif';
-    ctx.fillText('⏸ PAUSED', W / 2, y0);
+    ctx.fillText(T[LANG].paused, W / 2, y0);
     ctx.font = 'bold ' + small + 'px -apple-system, sans-serif';
-    ctx.fillText('Press P or tap the screen to continue', W / 2, line1);
+    ctx.fillText(T[LANG].pausedHint, W / 2, line1);
   } else if (state.mode === 'amnesia') {
     ctx.font = 'bold ' + big + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#6db8ff';
-    ctx.fillText('🌀 Amnesio!', W / 2, y0);
+    ctx.fillText(T[LANG].amnesio, W / 2, y0);
     ctx.fillStyle = '#fff';
     ctx.font = 'bold ' + small + 'px -apple-system, sans-serif';
-    ctx.fillText('Stitch forgot everything… back to World 3!', W / 2, line1);
+    ctx.fillText(T[LANG].amnesioHint, W / 2, line1);
   } else if (state.mode === 'dead') {
     ctx.font = 'bold ' + big + 'px -apple-system, sans-serif';
-    ctx.fillText('Ouch!', W / 2, y0);
+    ctx.fillText(T[LANG].ouch, W / 2, y0);
     ctx.font = small + 'px -apple-system, sans-serif';
-    ctx.fillText(state.lives > 0 ? 'Try again — you can do it!' : '', W / 2, line1);
+    ctx.fillText(state.lives > 0 ? T[LANG].tryAgain : '', W / 2, line1);
   } else if (state.mode === 'levelclear') {
     ctx.font = 'bold ' + big + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#ffd700';
-    ctx.fillText('LEVEL CLEAR! ⭐', W / 2, y0);
+    ctx.fillText(T[LANG].levelClear, W / 2, y0);
   } else if (state.mode === 'gameover') {
     ctx.font = 'bold ' + big + 'px -apple-system, sans-serif';
-    ctx.fillText('Game Over', W / 2, y0);
+    ctx.fillText(T[LANG].gameOver, W / 2, y0);
     ctx.font = 'bold ' + small + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#ffd700';
-    ctx.fillText('Score: ' + state.score, W / 2, line1);
+    ctx.fillText(T[LANG].score + state.score, W / 2, line1);
     ctx.fillStyle = '#fff';
-    ctx.fillText('Tap to play again!', W / 2, line2);
+    ctx.fillText(T[LANG].tapToPlayAgain, W / 2, line2);
   } else if (state.mode === 'win') {
     ctx.font = 'bold ' + big + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#ffd700';
-    ctx.fillText('🏆 YOU WIN! 🏆', W / 2, y0);
+    ctx.fillText(T[LANG].youWin, W / 2, y0);
     ctx.font = 'bold ' + small + 'px -apple-system, sans-serif';
     ctx.fillStyle = '#fff';
-    ctx.fillText('Score: ' + state.score + '   Coins: ' + state.coins, W / 2, line1);
-    ctx.fillText('Tap to play again!', W / 2, line2);
+    ctx.fillText(T[LANG].scoreCoins(state.score, state.coins), W / 2, line1);
+    ctx.fillText(T[LANG].tapToPlayAgain, W / 2, line2);
   }
+}
+
+function drawWorldBanner() {
+  if (worldBannerT <= 0 || state.mode !== 'play') return;
+  // fade in over the first ~20 frames, hold, then fade out over the last ~30
+  const a = worldBannerT > 70 ? (90 - worldBannerT) / 20 : worldBannerT < 30 ? worldBannerT / 30 : 1;
+  const name = T[LANG].worlds[state.level] || '';
+  const big = Math.min(40, W * 0.06, H * 0.09);
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, a));
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.font = 'bold ' + big + 'px -apple-system, sans-serif';
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+  ctx.lineWidth = 4;
+  const msg = T[LANG].world + ' ' + (state.level + 1) + (name ? ' — ' + name.toUpperCase() : '');
+  ctx.strokeText(msg, W / 2, H * 0.08);
+  ctx.fillText(msg, W / 2, H * 0.08);
+  ctx.restore();
 }
 
 // ============ MAIN LOOP ============
