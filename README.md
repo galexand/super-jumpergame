@@ -237,7 +237,9 @@ and awards Lilo & Stitch a **golden medal**. (Tap to skip the ceremony.)
   - **Amnesio (303)** in World 7 — touch or bolt wipes Stitch's memory: **back to World 3!**
   - **Sample (258)** in World 8 — his beat curse **doubles your runs and jumps** for a while (🎵 in the HUD).
   - **Fibber (032)** in World 9 — the dangerous one: costs **two hearts** (Jumba's shield still saves you).
-  - All four **experiments appear together** in the final showdown in World 11.
+  - **Dupe (344)**, from World 10 on — his split ray **halves your runs and jumps** for a while
+    (½ in the HUD), no heart lost. Jumba's shield absorbs it, and stomping Dupe ends the debuff early.
+  - All five **experiments appear together** in the final showdown in World 11.
 
 ### High scores
 
