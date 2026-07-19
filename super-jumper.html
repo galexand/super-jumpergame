@@ -156,6 +156,7 @@ const T = {
     pausedHint: 'Press P or tap the screen to continue',
     amnesio: '🌀 Amnesio!',
     amnesioHint: 'Stitch forgot everything… back to World 3!',
+    powerSplit: '½ Power halved!',
     ouch: 'Ouch!',
     tryAgain: 'Try again — you can do it!',
     levelClear: 'LEVEL CLEAR! ⭐',
@@ -190,6 +191,7 @@ const T = {
     pausedHint: 'Apasă P sau atinge ecranul pentru a continua',
     amnesio: '🌀 Amnesio!',
     amnesioHint: 'Stitch a uitat tot… înapoi în Lumea 3!',
+    powerSplit: '½ Putere înjumătățită!',
     ouch: 'Au!',
     tryAgain: 'Încearcă din nou — poți reuși!',
     levelClear: 'NIVEL TERMINAT! ⭐',
@@ -278,6 +280,7 @@ const sfx = {
 // villains: H hamster   G big bruiser   R red clone (saucer-drop in W5+)   B sandwich thrower   T Mertle (scream = 10s nap)
 // experiments: 1 Babyfier-151 (W6, like the hamster)   3 Amnesio-303 (W7, back to World 3!)
 //              2 Sample-258 (W8, hyper curse: moves doubled)   0 Fibber-032 (W9, costs TWO hearts)
+//              4 Dupe-344 (from W10 on, split ray: run/jump halved for a while, no heart lost)
 // friends:  L Lilo (speed + 4 arms)   N Nani (+1 heart)   D David (higher jump)
 //           K Pleakley (coin magnet)  A Angel (heart refill)  J Jumba (shield)
 const LEVELS = [
@@ -387,7 +390,7 @@ const LEVELS = [
   '               oo',
   '                               W               o                   o',
   '                              ===             ===                 M',
-  '   P      G   R           G   R   H         G     R           G       R         G   R           G   G       F',
+  '   P      G   R           G   R   H    4    G     R           G       R         G   R           G   G       F',
   '  ==================   ===============  ===============   ================  ==============   =======================',
   '  ==================   ===============  ===============   ================  ==============   =======================',
 ],
@@ -398,7 +401,7 @@ const LEVELS = [
   '            oo                 ooo                                  ooo',
   '           ====               =====              W         ====   =====',
   '                        M',
-  '   P      H     R      B        G     1  3   R     T   2   0     G      R     B       G      F',
+  '   P      H     R      B        G     1  3   R     T   2   0  4  G      R     B       G      F',
   '  ==========================  ====================================================   ===============',
   '  ==========================  ====================================================   ===============',
 ],
@@ -409,7 +412,7 @@ const LEVELS = [
   '              oo                    ooo',
   '             ====        W         =====          ====',
   '                        M',
-  '   P     T     H     R      G      B      T      R     H     G        F',
+  '   P     T     H     R      G      B      T      R     H     G   4    F',
   '  ==============================  ========================  ================',
   '  ==============================  ========================  ================',
 ],
@@ -479,7 +482,7 @@ function stretchMap(map, factor) {
   }
   if (!best) return map;
   // one-of-a-kind letters (friends, ship, pistols) don't get cloned
-  const chunk = rows.map(r => r.slice(best.s, b).replace(/[LNDKAJSW0123T]/g, ' '));
+  const chunk = rows.map(r => r.slice(best.s, b).replace(/[LNDKAJSW01234T]/g, ' '));
   return rows.map((r, y) => r.slice(0, b) + chunk[y].repeat(best.t) + r.slice(b));
 }
 
@@ -502,6 +505,7 @@ function loadLevel(n) {
   rideShips = [];
   player.flying = false; // the spacecraft stays behind between levels
   player.hyper = 0;       // Sample's curse wears off between levels
+  player.half = 0;        // and so does Dupe's power-split
   player.sleep = 0;       // and Stitch wakes up
   player.landSquash = 0;
   for (let y = 0; y < levelH; y++) {
@@ -512,7 +516,7 @@ function loadLevel(n) {
       if (c === '=' || c === '?' || c === 'M') tiles[y][x] = c;
       else if (c === 'F') { tiles[y][x] = 'F'; levelFlagX = x * TILE; }
       else if (c === 'o') coinsList.push({ x, y, taken: false, phase: Math.random() * 6 });
-      else if ('GHRB1320T'.includes(c)) {
+      else if ('GHRB13204T'.includes(c)) {
         // G bruiser, H hamster, R red clone, B sandwich-thrower, digits = experiments
         const kind = c;
         const SPEC = {
@@ -524,6 +528,7 @@ function loadLevel(n) {
           '3': { w: 0.7,  h: 0.66, vx: -1.2 },
           '2': { w: 0.7,  h: 0.68, vx: -1.4 },
           '0': { w: 0.72, h: 0.66, vx: -1.0 },
+          '4': { w: 0.68, h: 0.6,  vx: -1.1 },
           T:   { w: 0.6,  h: 0.95, vx: -0.8 },
         }[kind];
         const eh = TILE * SPEC.h;
@@ -540,8 +545,8 @@ function loadLevel(n) {
           en.y = en.shipY;
         }
         // from world 7 the bruisers carry blasters; from world 9 the red clones too.
-        // Amnesio, Sample and Fibber always shoot.
-        if ((kind === 'G' && n >= 6) || (kind === 'R' && n >= 8) || '320'.includes(kind)) en.armed = true;
+        // Amnesio, Sample, Fibber and Dupe always shoot.
+        if ((kind === 'G' && n >= 6) || (kind === 'R' && n >= 8) || '3204'.includes(kind)) en.armed = true;
         // from world 10, Gantu and Reuben have turned good
         if ((kind === 'G' || kind === 'B') && n >= 9) { en.friendly = true; en.armed = false; }
         enemies.push(en);
@@ -902,9 +907,25 @@ function applyExperimentHit(kind) {
   } else if (kind === '2') {
     // Sample-258: the beat curse — runs and jumps are doubled for a while
     player.hyper = 600;
+    player.half = 0; // Dupe's halving is cancelled if it was active
     player.invuln = 60;
     sfx.zap();
     spawnParticles(player.x + player.w / 2, player.y, '#c77dff', 10);
+  } else if (kind === '4') {
+    // Dupe-344: the split ray — runs and jumps are halved for a while, no heart lost
+    if (player.shield) {
+      player.shield = false;
+      player.invuln = 90;
+      sfx.hurt();
+      spawnParticles(player.x + player.w / 2, player.y + player.h / 2, '#7adcff', 12);
+      return;
+    }
+    player.half = 480;
+    player.hyper = 0; // Dupe's halving replaces Sample's doubling, they don't stack
+    player.invuln = 60;
+    sfx.zap();
+    spawnFloater(player.x + player.w / 2, player.y - 10, T[LANG].powerSplit, '#fff6c9');
+    spawnParticles(player.x + player.w / 2, player.y, '#fff6c9', 10);
   } else if (kind === '0') {
     // Fibber-032: harsh — TWO hearts at once (the shield still saves you)
     if (player.shield) {
@@ -987,10 +1008,11 @@ function update() {
   // --- player movement ---
   const FRICTION = 0.82, GRAVITY = 0.62;
   const hyper = player.hyper > 0; // Sample's beat curse: every move is doubled
+  const half = player.half > 0;   // Dupe's split ray: every move is halved
   const asleep = player.sleep > 0; // Mertle screamed — nap time
-  const JUMP = (player.surf ? -15.4 : -13.2) * (hyper ? 1.35 : 1);
-  const ACCEL = (player.fast ? 0.72 : 0.55) * (hyper ? 1.7 : 1);
-  const MAXSPD = (player.fast ? 6.4 : 4.6) * (hyper ? 2 : 1);
+  const JUMP = (player.surf ? -15.4 : -13.2) * (hyper ? 1.35 : half ? 0.5 : 1);
+  const ACCEL = (player.fast ? 0.72 : 0.55) * (hyper ? 1.7 : half ? 0.5 : 1);
+  const MAXSPD = (player.fast ? 6.4 : 4.6) * (hyper ? 2 : half ? 0.5 : 1);
   if (keys.left && !asleep)  { player.vx -= ACCEL; player.facing = -1; }
   if (keys.right && !asleep) { player.vx += ACCEL; player.facing = 1; }
   if ((!keys.left && !keys.right) || asleep) player.vx *= FRICTION;
@@ -1043,6 +1065,7 @@ function update() {
 
   if (player.invuln > 0) player.invuln--;
   if (player.hyper > 0) player.hyper--;
+  if (player.half > 0) player.half--;
   if (player.sleep > 0) {
     player.sleep--;
     player.invuln = Math.max(player.invuln, 2); // nobody bothers a sleeping Stitch
@@ -1125,7 +1148,7 @@ function update() {
             state.score += 100;
           } else {
             // zapped, not stomped: puff of sparks and gone — no squashed pose
-            state.score += { G: 500, R: 300, B: 250, '0': 400, '3': 350, '2': 350 }[en.kind] || 200;
+            state.score += { G: 500, R: 300, B: 250, '0': 400, '3': 350, '2': 350, '4': 350 }[en.kind] || 200;
             spawnParticles(en.x + en.w / 2, en.y + en.h / 2, '#7dff8a', 10);
             const idx = enemies.indexOf(en);
             if (idx >= 0) enemies.splice(idx, 1);
@@ -1142,7 +1165,7 @@ function update() {
           b.y > player.y - 4 && b.y < player.y + player.h + 4) {
         bolts.splice(i, 1);
         spawnParticles(b.x, b.y, '#ffb066', 6);
-        if (b.fx && '320'.includes(b.fx)) applyExperimentHit(b.fx);
+        if (b.fx && '3204'.includes(b.fx)) applyExperimentHit(b.fx);
         else damagePlayer();
         if (state.mode !== 'play') return; // Amnesio may have swapped the whole level
         continue;
@@ -1329,13 +1352,14 @@ function update() {
           en.alive = false;
           en.squash = 0;
           player.vy = -8;
-          const gain = { G: 500, R: 300, B: 250, '0': 400, '3': 350, '2': 350 }[en.kind] || 200;
+          if (en.kind === '4') player.half = 0; // stomping Dupe ends the power-split right away
+          const gain = { G: 500, R: 300, B: 250, '0': 400, '3': 350, '2': 350, '4': 350 }[en.kind] || 200;
           state.score += gain;
           sfx.stomp();
           shakeScreen(8);
           spawnFloater(en.x + en.w / 2, en.y - 6, '+' + gain, '#ffd700');
           spawnParticles(en.x + en.w / 2, en.y,
-            { G: '#8296ab', R: '#e05252', B: '#e8c66a', '1': '#f2a0c0', '3': '#6db8ff', '2': '#c77dff', '0': '#ff5555' }[en.kind] || '#f0f0f0', 8);
+            { G: '#8296ab', R: '#e05252', B: '#e8c66a', '1': '#f2a0c0', '3': '#6db8ff', '2': '#c77dff', '0': '#ff5555', '4': '#e8e37a' }[en.kind] || '#f0f0f0', 8);
         }
       } else if (player.invuln <= 0 && !en.shell) {
         if (en.friendly) {
@@ -1349,7 +1373,7 @@ function update() {
           sfx.scream();
           spawnParticles(player.x + player.w / 2, player.y, '#cfc4f5', 10);
         }
-        else if ('320'.includes(en.kind)) applyExperimentHit(en.kind);
+        else if ('3204'.includes(en.kind)) applyExperimentHit(en.kind);
         else damagePlayer();
         if (state.mode !== 'play') return; // Amnesio may have swapped the whole level
       }
@@ -1485,6 +1509,7 @@ function killPlayer() {
   setSize(false); // the panini size is lost, but friends' gifts stay
   player.flying = false;
   player.hyper = 0;
+  player.half = 0;
   state.lives--;
   heartFlashT = 24;
   state.mode = 'dead';
@@ -1846,7 +1871,7 @@ function draw() {
   // plasma bolts
   for (const b of bolts) {
     ctx.fillStyle = b.from === 'player' ? '#7dff8a'
-      : { '3': '#6db8ff', '2': '#c77dff', '0': '#ff5555' }[b.fx] || '#ffb066';
+      : { '3': '#6db8ff', '2': '#c77dff', '0': '#ff5555', '4': '#fff3b0' }[b.fx] || '#ffb066';
     ctx.beginPath();
     ctx.ellipse(b.x, b.y, 9, 4, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -3115,6 +3140,70 @@ function drawEnemy(en) {
     ctx.lineTo(cx + 5, py + h * 0.52);
     ctx.lineTo(cx + 7, py + h * 0.56);
     ctx.stroke();
+  } else if (en.kind === '4') {
+    // — Dupe-344: small yellow-green koala-ish experiment, one short antenna —
+    const YG = '#c7dd52', DYG = '#93a832', LTG = '#e6f2a8';
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = DYG;
+    // big round koala ears
+    ctx.fillStyle = YG;
+    ctx.beginPath();
+    ctx.arc(cx - w * 0.34, py + h * 0.2, w * 0.22, 0, Math.PI * 2);
+    ctx.arc(cx + w * 0.34, py + h * 0.2, w * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = LTG;
+    ctx.beginPath();
+    ctx.arc(cx - w * 0.34, py + h * 0.2, w * 0.11, 0, Math.PI * 2);
+    ctx.arc(cx + w * 0.34, py + h * 0.2, w * 0.11, 0, Math.PI * 2);
+    ctx.fill();
+    // short antenna on top
+    ctx.strokeStyle = DYG;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, py + 2);
+    ctx.lineTo(cx, py - 5);
+    ctx.stroke();
+    ctx.fillStyle = YG;
+    ctx.beginPath();
+    ctx.arc(cx, py - 6, 3, 0, Math.PI * 2);
+    ctx.fill();
+    // round little body
+    ctx.fillStyle = YG;
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = DYG;
+    ctx.beginPath();
+    ctx.arc(cx, py + h * 0.56 + waddle * 0.2, w * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = LTG;
+    ctx.beginPath();
+    ctx.ellipse(cx, py + h * 0.66, w * 0.22, h * 0.16, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // friendly-but-mischievous eyes
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(cx - w * 0.15 + lookX, py + h * 0.46, 4, 0, Math.PI * 2);
+    ctx.arc(cx + w * 0.15 + lookX, py + h * 0.46, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#3a3a10';
+    ctx.beginPath();
+    ctx.arc(cx - w * 0.13 + lookX, py + h * 0.47, 2, 0, Math.PI * 2);
+    ctx.arc(cx + w * 0.17 + lookX, py + h * 0.47, 2, 0, Math.PI * 2);
+    ctx.fill();
+    // one raised, playful brow — mischief
+    ctx.strokeStyle = DYG;
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(cx + w * 0.06, py + h * 0.34);
+    ctx.lineTo(cx + w * 0.22, py + h * 0.3);
+    ctx.stroke();
+    // small grin
+    ctx.strokeStyle = '#5c6b1e';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(cx, py + h * 0.6, 4, 0.2, Math.PI - 0.2);
+    ctx.stroke();
   } else if (en.kind === 'T') {
     // — Mertle: red curls, glasses, freckles and a mighty scream —
     const TSKIN = '#f2c9a4', THAIR = '#c9502e', TDRESS = '#e8d44d';
@@ -3816,7 +3905,7 @@ function drawHUD() {
   ctx.fillText('× ' + state.coins, coinX + 18, pad + 2);
   // score + level (+ speed boost indicator)
   ctx.textAlign = 'right';
-  const label = (player.sleep > 0 ? '💤 ' : '') + (player.hyper > 0 ? '🎵 ' : '') + (player.fast ? '⚡ ' : '') + T[LANG].world + ' ' + (state.level + 1) + '   ★ ' + state.score;
+  const label = (player.sleep > 0 ? '💤 ' : '') + (player.hyper > 0 ? '🎵 ' : '') + (player.half > 0 ? '½ ' : '') + (player.fast ? '⚡ ' : '') + T[LANG].world + ' ' + (state.level + 1) + '   ★ ' + state.score;
   ctx.strokeText(label, W - pad, pad + 2);
   ctx.fillText(label, W - pad, pad + 2);
 }
